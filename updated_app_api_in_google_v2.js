@@ -2280,17 +2280,29 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
           </select>
           {/* Config statistics */}
           <div className="flex gap-6 items-center">
-            <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
-              theme === 'dark' ? 'border-blue-500 text-white' : 'border-blue-600 text-gray-900'
-            }`}>
-              <span className="text-xl font-bold">{totalConfigs}</span>
-              <span className="text-xs mt-1 text-center whitespace-nowrap">Total Configs</span>
+            <div
+              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+                theme === 'dark'
+                  ? 'border-blue-500 text-white'
+                  : 'border-blue-600 text-gray-900'
+              }`}
+            >
+              <span className="text-lg font-bold">{totalConfigs}</span>
+              <span className="mt-1 text-center text-[10px] leading-tight">
+                Total Configs
+              </span>
             </div>
-            <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
-              theme === 'dark' ? 'border-green-500 text-white' : 'border-green-600 text-gray-900'
-            }`}>
-              <span className="text-xl font-bold">{totalPublished}</span>
-              <span className="text-xs mt-1 text-center whitespace-nowrap">Published</span>
+            <div
+              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+                theme === 'dark'
+                  ? 'border-green-500 text-white'
+                  : 'border-green-600 text-gray-900'
+              }`}
+            >
+              <span className="text-lg font-bold">{totalPublished}</span>
+              <span className="mt-1 text-center text-[10px] leading-tight">
+                Published
+              </span>
             </div>
           </div>
 
