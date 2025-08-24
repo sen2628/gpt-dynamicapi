@@ -891,7 +891,7 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
                 <span>{env.toUpperCase()}</span>
                 {config.environments[env]?.promotedVersionId && (
                   <span className="text-xs bg-white bg-opacity-20 px-2 py-0.5 rounded-full">
-                    Promoted
+                    v{config.versions.find(v => v.id === config.environments[env].promotedVersionId)?.version}
                   </span>
                 )}
               </div>
@@ -1894,6 +1894,19 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
 
     const currentActiveVersionId = config.versions.find(v => v.isCurrent)?.id;
 
+    const getEnvBadges = (versionId) => {
+        const badges = [];
+        if (currentActiveVersionId === versionId) {
+            badges.push('DEV');
+        }
+        Object.entries(config.environments || {}).forEach(([env, envData]) => {
+            if (envData.promotedVersionId === versionId) {
+                badges.push(env.toUpperCase());
+            }
+        });
+        return badges;
+    };
+
     return (
         <div ref={dropdownRef} className={`absolute right-0 mt-2 w-72 max-h-64 overflow-auto rounded-lg shadow-lg border z-50 ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
             {config.versions.sort((a,b) => b.version - a.version).map(version => (
@@ -1902,7 +1915,17 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
                     className={`p-2 text-sm flex items-center justify-between cursor-pointer ${viewingVersion?.id === version.id ? (theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100') : ''}`}
                     onClick={() => onSelectVersion(viewingVersion?.id === version.id ? null : version)}
                 >
-                    <span className="flex items-center gap-1">v{version.version}{version.isCurrent && <span className="text-xs text-green-500">active</span>}</span>
+                    <span className="flex items-center gap-1">
+                        v{version.version}
+                        {getEnvBadges(version.id).map(badge => (
+                            <span
+                                key={badge}
+                                className={`text-[10px] px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-700'}`}
+                            >
+                                {badge}
+                            </span>
+                        ))}
+                    </span>
                     <div className="flex items-center gap-1">
                         <button
                             onClick={(e) => { e.stopPropagation(); onCloneVersion(version); }}
@@ -2506,7 +2529,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
 };
 
 // Enhanced API Studio Component
-const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion }) => {
+const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion, onModeChange }) => {
   const [activeTab, setActiveTab] = useState('workflow');
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResults, setExecutionResults] = useState(null);
@@ -2724,8 +2747,8 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               onClick={() => setShowJsonEditor(!showJsonEditor)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
                 showJsonEditor
-                  ? theme === 'dark' 
-                    ? 'bg-gray-700 text-blue-400' 
+                  ? theme === 'dark'
+                    ? 'bg-gray-700 text-blue-400'
                     : 'bg-gray-100 text-blue-600'
                   : theme === 'dark'
                     ? 'hover:bg-gray-700 text-gray-300'
@@ -2735,7 +2758,27 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               <Braces className="w-4 h-4" />
               JSON View
             </button>
-            
+
+            {environment === 'dev' && (
+              <button
+                onClick={() => onModeChange(mode === 'view' ? 'edit' : 'view')}
+                disabled={mode === 'view' && config.status === 'published'}
+                title={
+                  mode === 'view'
+                    ? (config.status === 'published' ? 'Unpublish to edit' : 'Switch to edit mode')
+                    : 'Switch to view mode'
+                }
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                  theme === 'dark'
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {mode === 'view' ? <Edit3 className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {mode === 'view' ? 'Edit' : 'View'}
+              </button>
+            )}
+
               <div className="relative">
                 <button
                   onClick={() => setShowVersionDropdown(!showVersionDropdown)}
@@ -4448,7 +4491,7 @@ const App = () => {
     });
     setConfigs(newConfigs);
     setSelectedConfig(newConfigs.find(c => c.id === selectedConfig.id));
-    showToast('Version made active in development environment', 'success');
+    showToast('Version made active. Remember to publish and promote to each environment.', 'info');
   };
 
   const toggleTheme = () => {
@@ -4553,6 +4596,7 @@ const App = () => {
             onPromote={handlePromoteEnvironment}
             onMakeVersionActive={handleMakeVersionActive}
             onCloneFromVersion={handleCloneFromVersion}
+            onModeChange={setStudioMode}
             environment={environment}
             theme={theme}
             showToast={showToast}
