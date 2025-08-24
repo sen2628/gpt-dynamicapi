@@ -8,7 +8,7 @@ import {
   MoreVertical, Search, X, Check, AlertCircle, Loader2,
   ChevronDown, Activity, TrendingUp, Users, Lock,
   Sparkles, Command, Workflow, RefreshCw, BarChart3,
-  Rocket, UserCheck, Send, ArrowUp, ExternalLink,
+  Rocket, Send, ArrowUp, ExternalLink,
   BookOpen, Terminal, CheckCircle, XCircle, Info, MousePointer2,
   UploadCloud, ChevronsUpDown, ArrowLeft, Pause, CheckSquare,
   AlertTriangle, GitMerge, History, Shuffle, List, Cpu,
@@ -23,7 +23,7 @@ import {
   Beaker, Target, Award, Sun, Moon, GitPullRequest,
   Share2, ArrowRightCircle, CheckCircle2, CloudUpload,
   Hash, Type, BoxSelect, Grid3x3, Columns,
-  FileInput, FileOutput, ZoomIn, ZoomOut, Building, UserCheck2,
+  FileInput, FileOutput, ZoomIn, ZoomOut,
   ClipboardCheck, GripVertical, FileStack, GitCommitVertical, Dot, Edit3,
 } from 'lucide-react';
 
@@ -534,7 +534,11 @@ const PromoteModal = ({ config, onPromote, onClose, theme, fromEnv, versions }) 
             Cancel
           </button>
           <button
-            onClick={() => onPromote(fromEnv, toEnv, selectedVersion)}
+            onClick={() => {
+              if (window.confirm(`Promote to ${toEnv.toUpperCase()}?`)) {
+                onPromote(fromEnv, toEnv, selectedVersion);
+              }
+            }}
             disabled={!toEnv || !selectedVersion}
             className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
@@ -867,6 +871,24 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
     onUpdate(updatedConfig);
     showToast('Variable deleted', 'success');
   };
+
+  const handleDepromote = (env) => {
+    if (!window.confirm(`Depromote ${env.toUpperCase()} environment?`)) return;
+    const updatedConfig = {
+      ...config,
+      environments: {
+        ...config.environments,
+        [env]: {
+          ...config.environments[env],
+          promotedVersionId: null,
+          promotedFrom: null,
+          lastPromotion: null
+        }
+      }
+    };
+    onUpdate(updatedConfig);
+    showToast('Environment depromoted', 'info');
+  };
   
   return (
     <div className={`p-6 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
@@ -935,14 +957,27 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
               <button
                 onClick={() => setShowPromoteModal(true)}
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
-                  theme === 'dark' 
-                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
+                  theme === 'dark'
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
                     : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                 }`}
               >
                 <GitMerge className="w-4 h-4" />
                 Promote
               </button>
+              {selectedEnv !== 'dev' && config.environments[selectedEnv]?.promotedVersionId && (
+                <button
+                  onClick={() => handleDepromote(selectedEnv)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                    theme === 'dark'
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <GitBranch className="w-4 h-4" />
+                  Depromote
+                </button>
+              )}
             </div>
           </div>
           
@@ -2043,7 +2078,7 @@ const CloneModal = ({ onClose, onClone, theme }) => {
 // --- CORE LAYOUT COMPONENTS ---
 
 // Enhanced Dashboard Component
-const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onCloneConfig, theme, showToast, environment, onEnvironmentChange, searchTerm, persona, onPublish, onUnpublish }) => {
+const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onCloneConfig, theme, showToast, environment, onEnvironmentChange, searchTerm, onPublish, onUnpublish }) => {
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('modified');
@@ -2086,13 +2121,13 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   };
 
   const filteredConfigs = useMemo(() => {
-    let filtered = persona === 'subscriber' ? configs.filter(c => c.status === 'published') : configs;
-    
+    let filtered = configs;
+
     // Apply status filter
-    if (filter !== 'all' && persona === 'builder') {
+    if (filter !== 'all') {
       filtered = filtered.filter(c => c.status === filter);
     }
-    
+
     // Apply sorting
     filtered = [...filtered].sort((a, b) => {
       if (sortBy === 'modified') {
@@ -2104,77 +2139,10 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
       }
       return 0;
     });
-    
-    return filtered;
-  }, [configs, filter, sortBy, persona]);
 
-  // Subscriber Marketplace View
-  if (persona === 'subscriber') {
-    return (
-        <div className={`p-4 sm:p-6 overflow-y-auto h-full ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
-            <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
-                <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>API Marketplace</h2>
-                <div className="flex items-center gap-2 sm:gap-4">
-                    <select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value)}
-                        className={`px-4 py-2 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'} focus:ring-2 focus:ring-blue-500`}
-                    >
-                        <option value="executions">Most Popular</option>
-                        <option value="modified">Recently Updated</option>
-                        <option value="name">Alphabetical</option>
-                    </select>
-                    <div className={`flex items-center gap-1 p-1 rounded-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                        <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? (theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : (theme === 'dark' ? 'text-gray-400' : 'text-gray-500')}`}><Grid3x3 className="w-4 h-4" /></button>
-                        <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? (theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : (theme === 'dark' ? 'text-gray-400' : 'text-gray-500')}`}><List className="w-4 h-4" /></button>
-                    </div>
-                </div>
-            </div>
-            
-            {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredConfigs.map(config => (
-                        <div key={config.id} onClick={() => onSelectConfig(config, 'view')} className={`relative group rounded-lg shadow-sm border p-6 hover:shadow-lg transition-all cursor-pointer transform hover:-translate-y-1 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 hover:border-blue-500' : 'bg-white border-gray-200 hover:border-blue-500'}`}>
-                            <h3 className={`font-semibold pr-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{config.name}</h3>
-                            <p className={`text-sm mt-2 mb-4 line-clamp-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>{config.description || 'No description'}</p>
-                            <div className={`flex items-center justify-between text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-                                <span>v{config.versions.find(v => v.isCurrent)?.version}</span>
-                                <div className="flex items-center gap-1">
-                                    <Users className="w-4 h-4"/>
-                                    <span>{config.applications.length}</span>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className={`rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <table className="w-full">
-                        <thead className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                            <tr>
-                                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Name</th>
-                                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Applications</th>
-                                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Last Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredConfigs.map((config, index) => (
-                                <tr key={config.id} onClick={() => onSelectConfig(config, 'view')} className={`cursor-pointer transition-colors ${theme === 'dark' ? 'hover:bg-gray-700/50 border-gray-700' : 'hover:bg-gray-50 border-gray-200'} ${index < filteredConfigs.length - 1 ? 'border-b' : ''}`}>
-                                    <td className={`px-6 py-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                        <p className="font-medium">{config.name}</p>
-                                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{config.description}</p>
-                                    </td>
-                                    <td className={`px-6 py-4 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{config.applications.join(', ')}</td>
-                                    <td className={`px-6 py-4 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{new Date(config.modifiedAt).toLocaleDateString()}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
-    );
-  }
+    return filtered;
+  }, [configs, filter, sortBy]);
+
 
   // Builder Dashboard
   return (
@@ -2589,9 +2557,13 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 
   const handlePublishToggle = () => {
       if (config.status === 'published') {
-          onUnpublish(config.id);
+          if (window.confirm('Unpublish this API?')) {
+              onUnpublish(config.id);
+          }
       } else {
-          onPublish(config.id);
+          if (window.confirm('Publish this API?')) {
+              onPublish(config.id);
+          }
       }
   };
   
@@ -2687,6 +2659,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
     const promotedVersion = config.versions.find(v => v.id === versionId);
     if (!promotedVersion) return;
+    if (!window.confirm(`Promote version v${promotedVersion.version} from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
 
     const updatedConfig = {
       ...config,
@@ -2703,6 +2676,24 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     onUpdate(updatedConfig);
     setShowPromoteModal(false);
     showToast(`Configuration version v${promotedVersion.version} promoted from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}`, 'success');
+  };
+
+  const handleDepromote = () => {
+    if (!window.confirm(`Depromote environment ${environment.toUpperCase()}?`)) return;
+    const updatedConfig = {
+      ...config,
+      environments: {
+        ...config.environments,
+        [environment]: {
+          ...config.environments[environment],
+          promotedVersionId: null,
+          promotedFrom: null,
+          lastPromotion: null
+        }
+      }
+    };
+    onUpdate(updatedConfig);
+    showToast(`Environment ${environment.toUpperCase()} depromoted`, 'info');
   };
   
   const handleCloneConfirm = (newName, newApp) => {
@@ -2827,7 +2818,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
                 </span>
               )}
 
-            {environment === 'dev' && (
+            {environment === 'dev' ? (
                 <>
                     <button
                         onClick={handleExecuteWorkflow}
@@ -2860,6 +2851,25 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
                         {config.status === 'published' ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
                         {config.status === 'published' ? 'Unpublish' : 'Publish'}
                     </button>
+                </>
+            ) : (
+                <>
+                    <button
+                        onClick={() => setShowPromoteModal(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        <GitMerge className="w-4 h-4" />
+                        Promote
+                    </button>
+                    {config.environments[environment]?.promotedVersionId && (
+                        <button
+                            onClick={handleDepromote}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                            <GitBranch className="w-4 h-4" />
+                            Depromote
+                        </button>
+                    )}
                 </>
             )}
           </div>
@@ -3263,7 +3273,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
       
       {/* Canvas */}
       <div className="flex-1 flex">
-        <div 
+        <div
             className={`flex-1 relative overflow-hidden ${isReadOnly ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
             ref={canvasRef}
             onDrop={handleDrop}
@@ -3271,12 +3281,15 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
             onMouseDown={handleCanvasMouseDown}
             onWheel={handleWheel}
         >
+          <div className="absolute top-2 left-2 z-10 px-2 py-1 text-xs font-semibold rounded bg-blue-600 text-white">
+            {environment.toUpperCase()}
+          </div>
           <div
             className={`absolute inset-0 ${
               theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'
             }`}
             style={{
-              backgroundImage: `radial-gradient(${
+              backgroundImage: `radial-gradient(${ 
                 theme === 'dark' ? '#374151' : '#e5e7eb'
               } 1px, transparent 1px)`,
               backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`,
@@ -4047,7 +4060,6 @@ const App = () => {
   const [environment, setEnvironment] = useState('dev');
   const [theme, setTheme] = useState('light');
   const [searchTerm, setSearchTerm] = useState('');
-  const [persona, setPersona] = useState('builder'); // 'builder' or 'subscriber'
   const [notifications, setNotifications] = useState([
     { id: 1, message: 'API deployment successful', time: '5 min ago', read: false, type: 'success' },
     { id: 2, message: 'New subscriber added', time: '1 hour ago', read: false, type: 'info' },
@@ -4471,6 +4483,7 @@ const App = () => {
   };
 
   const handleMakeVersionActive = (versionId) => {
+    if (!window.confirm('Make this version active?')) return;
     const newConfigs = configs.map(cfg => {
         if (cfg.id === selectedConfig.id) {
             const newVersions = cfg.versions.map(v => ({
@@ -4570,7 +4583,6 @@ const App = () => {
             environment={environment}
             onEnvironmentChange={setEnvironment}
             searchTerm={searchTerm}
-            persona={persona}
           />
         );
       
@@ -4603,19 +4615,6 @@ const App = () => {
           />
         ) : null;
       
-      case 'subscriber':
-        return selectedConfig ? (
-            <SubscriberView
-                config={selectedConfig}
-                theme={theme}
-                onExit={() => {
-                    setSelectedConfig(null);
-                    setCurrentView('dashboard');
-                }}
-                showToast={showToast}
-            />
-        ) : null;
-
       case 'test-suites':
         return (
           <TestSuitesDashboard
@@ -4630,9 +4629,6 @@ const App = () => {
           />
         );
       
-      case 'subscriber-dashboard':
-          return <SubscriberDashboard theme={theme} />;
-          
       case 'environments':
           return selectedConfig ? (
               <EnvironmentManager
@@ -4656,6 +4652,7 @@ const App = () => {
   };
 
   const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
+    if (!window.confirm(`Promote from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
     const updatedConfigs = configs.map(config => {
       if (config.id === selectedConfig?.id) {
         const updatedConfig = {
@@ -4713,22 +4710,6 @@ const App = () => {
         </div>
 
         <div className="flex items-center gap-3">
-            <div className={`flex items-center gap-1 p-1 rounded-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                <button
-                    onClick={() => { setPersona('builder'); setCurrentView('dashboard'); setSelectedConfig(null); }}
-                    className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-all ${persona === 'builder' ? (theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : (theme === 'dark' ? 'text-gray-400' : 'text-gray-500')}`}
-                >
-                    <Building className="w-4 h-4" />
-                    Builder
-                </button>
-                <button
-                    onClick={() => { setPersona('subscriber'); setCurrentView('subscriber-dashboard'); setSelectedConfig(null); }}
-                    className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-all ${persona === 'subscriber' ? (theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : (theme === 'dark' ? 'text-gray-400' : 'text-gray-500')}`}
-                >
-                    <UserCheck2 className="w-4 h-4" />
-                    Subscriber
-                </button>
-            </div>
             <button
                 onClick={toggleTheme}
                 className={`flex items-center justify-center gap-2 p-2 rounded-lg transition-all ${
