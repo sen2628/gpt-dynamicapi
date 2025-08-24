@@ -113,18 +113,14 @@ const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, 
 // --- UTILITY & SHARED COMPONENTS ---
 
 // New SVG Logo based on user image
-const NewNAQLogo = ({ className = "w-8 h-8" }) => (
+const AppIntegratorLogo = ({ className = "w-8 h-8" }) => (
     <svg className={className} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{ stopColor: '#60A5FA', stopOpacity: 1 }} />
-                <stop offset="100%" style={{ stopColor: '#A78BFA', stopOpacity: 1 }} />
-            </linearGradient>
-        </defs>
-        <circle cx="50" cy="50" r="48" fill="url(#logoGradient)" />
-        <path d="M 30 75 L 50 25 L 70 75" stroke="white" strokeWidth="10" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M 40 60 H 60" stroke="white" strokeWidth="10" strokeLinecap="round" />
-        <circle cx="50" cy="45" r="5" fill="white" />
+        {/* Blue arc */}
+        <path d="M50 10A40 40 0 0 1 90 50L78 48A28 28 0 0 0 50 22Z" fill="#1E40AF" />
+        {/* Red arc */}
+        <path d="M90 50A40 40 0 0 1 50 90L52 78A28 28 0 0 0 78 50Z" fill="#DC2626" />
+        {/* Gray arc */}
+        <path d="M50 90A40 40 0 0 1 10 50L22 52A28 28 0 0 0 50 78Z" fill="#6B7280" />
     </svg>
 );
 
@@ -2411,7 +2407,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                 <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Status</th>
                 <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Version</th>
                 <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Applications</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Actions</th>
+                <th className={`text-right px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -4802,10 +4798,8 @@ const App = () => {
       <header className={`flex items-center justify-between px-4 py-2 ${theme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
         <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-                <NewNAQLogo />
-                <h1 className={`font-bold text-lg ${theme === 'dark' ? 'text-white' : 'text-gray-900'} flex items-center gap-2`}>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-500">App Integrator</span>
-                </h1>
+                <AppIntegratorLogo />
+                <h1 className={`font-bold text-xl uppercase ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>App Integrator</h1>
             </div>
         </div>
         
