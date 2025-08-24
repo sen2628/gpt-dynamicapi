@@ -113,7 +113,7 @@ const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, 
 // --- UTILITY & SHARED COMPONENTS ---
 
 // New SVG Logo based on user image
-const AppIntegratorLogo = ({ className = "w-8 h-8" }) => (
+const AppIntegratorLogo = ({ className = "w-8 h-8", theme = 'light' }) => (
     <svg className={className} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         {/* Blue arc */}
         <path d="M50 10A40 40 0 0 1 90 50L78 48A28 28 0 0 0 50 22Z" fill="#1E40AF" />
@@ -121,6 +121,8 @@ const AppIntegratorLogo = ({ className = "w-8 h-8" }) => (
         <path d="M90 50A40 40 0 0 1 50 90L52 78A28 28 0 0 0 78 50Z" fill="#DC2626" />
         {/* Gray arc */}
         <path d="M50 90A40 40 0 0 1 10 50L22 52A28 28 0 0 0 50 78Z" fill="#6B7280" />
+        {/* Center shape */}
+        <path d="M50 40L62 60H38Z" fill={theme === 'dark' ? '#FFFFFF' : '#000000'} />
     </svg>
 );
 
@@ -2169,6 +2171,8 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   const [showUnpublishModal, setShowUnpublishModal] = useState(null);
   const [showCloneModal, setShowCloneModal] = useState(null);
   const permissions = getEnvPermissions(environment);
+  const totalConfigs = configs.length;
+  const totalPublished = configs.filter(c => c.status === 'published').length;
 
   const handleDeleteClick = (e, config) => {
     e.stopPropagation();
@@ -2247,8 +2251,8 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
               <option value="dev">Development</option>
               <option value="qa">QA</option>
               <option value="uat">UAT</option>
-              <option value="prod">Production</option>
-              <option value="uatdr">UAT-DR</option>
+              <option value="uatdr">UAT DR</option>
+              <option value="prod">PROD</option>
               <option value="dr">DR</option>
             </select>
           </div>
@@ -2319,7 +2323,23 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             Create New API
         </button>
       </div>
-      
+
+      {/* Config statistics */}
+      <div className="flex gap-6 mb-6">
+        <div className={`flex flex-col items-center justify-center w-24 h-24 rounded-full border-4 ${
+          theme === 'dark' ? 'border-blue-500 text-white' : 'border-blue-600 text-gray-900'
+        }`}>
+          <span className="text-2xl font-bold">{totalConfigs}</span>
+          <span className="text-xs mt-1 text-center">Total Configs</span>
+        </div>
+        <div className={`flex flex-col items-center justify-center w-24 h-24 rounded-full border-4 ${
+          theme === 'dark' ? 'border-green-500 text-white' : 'border-green-600 text-gray-900'
+        }`}>
+          <span className="text-2xl font-bold">{totalPublished}</span>
+          <span className="text-xs mt-1 text-center">Published</span>
+        </div>
+      </div>
+
       {/* API Grid/List */}
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -4798,7 +4818,7 @@ const App = () => {
       <header className={`flex items-center justify-between px-4 py-2 ${theme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
         <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-                <AppIntegratorLogo />
+                <AppIntegratorLogo theme={theme} />
                 <h1 className={`font-bold text-xl uppercase ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>App Integrator</h1>
             </div>
         </div>
