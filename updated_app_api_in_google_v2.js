@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 
 import envConfig from './env-config.json';
+import logoLight from './app-integrator-logo-light.svg';
+import logoDark from './app-integrator-logo-dark.svg';
 
 const ENV_SETTINGS = Object.fromEntries(
   (envConfig.environments || []).map(e => [e.categoryId, e.categoryValues])
@@ -111,21 +113,6 @@ const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, 
 
 
 // --- UTILITY & SHARED COMPONENTS ---
-
-// New SVG Logo based on user image
-const AppIntegratorLogo = ({ className = "w-8 h-8", theme = 'light' }) => (
-    <svg className={className} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        {/* Blue arc */}
-        <path d="M50 10A40 40 0 0 1 90 50L78 48A28 28 0 0 0 50 22Z" fill="#1E40AF" />
-        {/* Red arc */}
-        <path d="M90 50A40 40 0 0 1 50 90L52 78A28 28 0 0 0 78 50Z" fill="#DC2626" />
-        {/* Gray arc */}
-        <path d="M50 90A40 40 0 0 1 10 50L22 52A28 28 0 0 0 50 78Z" fill="#6B7280" />
-        {/* Center shape */}
-        <path d="M50 40L62 60H38Z" fill={theme === 'dark' ? '#FFFFFF' : '#000000'} />
-    </svg>
-);
-
 
 // Toast Notification Component
 const Toast = ({ message, type = 'info', onClose }) => {
@@ -2330,13 +2317,13 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
           theme === 'dark' ? 'border-blue-500 text-white' : 'border-blue-600 text-gray-900'
         }`}>
           <span className="text-2xl font-bold">{totalConfigs}</span>
-          <span className="text-xs mt-1 text-center">Total Configs</span>
+          <span className="text-xs mt-1 text-center whitespace-nowrap">Total Configs</span>
         </div>
         <div className={`flex flex-col items-center justify-center w-24 h-24 rounded-full border-4 ${
           theme === 'dark' ? 'border-green-500 text-white' : 'border-green-600 text-gray-900'
         }`}>
           <span className="text-2xl font-bold">{totalPublished}</span>
-          <span className="text-xs mt-1 text-center">Published</span>
+          <span className="text-xs mt-1 text-center whitespace-nowrap">Published</span>
         </div>
       </div>
 
@@ -4818,7 +4805,7 @@ const App = () => {
       <header className={`flex items-center justify-between px-4 py-2 ${theme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
         <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-                <AppIntegratorLogo theme={theme} />
+                <img src={theme === 'dark' ? logoDark : logoLight} alt="App Integrator Logo" className="w-8 h-8" />
                 <h1 className={`font-bold text-xl uppercase ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>App Integrator</h1>
             </div>
         </div>
