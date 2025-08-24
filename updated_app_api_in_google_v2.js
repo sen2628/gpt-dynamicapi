@@ -27,6 +27,14 @@ import {
   ClipboardCheck, GripVertical, FileStack, GitCommitVertical, Dot, Edit3,
 } from 'lucide-react';
 
+import envConfig from './env-config.json';
+
+const ENV_SETTINGS = Object.fromEntries(
+  (envConfig.environments || []).map(e => [e.categoryId, e.categoryValues])
+);
+
+const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
+
 // --- NEW: Schema Mapper Component ---
 const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, theme }) => {
     const [draggedField, setDraggedField] = useState(null);
@@ -811,7 +819,7 @@ const SubscriberDashboard = ({ theme }) => {
 
 // Environment Manager Component
 const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showToast, onPromote }) => {
-  const environments = ['dev', 'qa', 'uat', 'prod', 'uatdr', 'dr'];
+  const environments = envConfig.environments.map(e => e.categoryId);
   const [selectedEnv, setSelectedEnv] = useState(currentEnvironment);
   const [showSecrets, setShowSecrets] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
@@ -1134,6 +1142,7 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
 const TestSuiteManager = ({ config, onUpdate, environment, theme, showToast }) => {
   const [selectedSuite, setSelectedSuite] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  const permissions = getEnvPermissions(environment);
   
   const handleCreateSuite = () => {
     const name = prompt('Test suite name:');
@@ -1221,7 +1230,7 @@ const TestSuiteManager = ({ config, onUpdate, environment, theme, showToast }) =
           </h3>
           <button
             onClick={handleCreateSuite}
-            disabled={environment !== 'dev'}
+            disabled={!permissions.allowEdit}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
@@ -1307,7 +1316,7 @@ const TestSuiteManager = ({ config, onUpdate, environment, theme, showToast }) =
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleAddTestCase(selectedSuite.id)}
-                        disabled={environment !== 'dev'}
+                        disabled={!permissions.allowEdit}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${
                           theme === 'dark' 
                             ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
@@ -1985,6 +1994,7 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
     }, [onClose]);
 
     const currentActiveVersionId = config.versions.find(v => v.isCurrent)?.id;
+    const permissions = getEnvPermissions(environment);
 
     const getEnvBadges = (versionId) => {
         const badges = [];
@@ -2021,14 +2031,15 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
                     <div className="flex items-center gap-1">
                         <button
                             onClick={(e) => { e.stopPropagation(); onCloneVersion(version); }}
-                            className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+                            disabled={!permissions.allowClone}
+                            className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             title="Clone"
                         >
                             <Copy className="w-3 h-3" />
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onMakeActive(version.id); }}
-                            disabled={environment !== 'dev' || currentActiveVersionId === version.id}
+                            disabled={!permissions.allowEdit || currentActiveVersionId === version.id}
                             className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-100 text-blue-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             title="Make Active"
                         >
@@ -2045,6 +2056,7 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
 const CloneModal = ({ onClose, onClone, theme }) => {
     const [name, setName] = useState('');
     const [app, setApp] = useState('Q1TIS');
+    const [tags, setTags] = useState('');
     const appOptions = ['Q1TIS', 'Q1TAS', 'CPS'];
 
     return (
@@ -2095,8 +2107,8 @@ const CloneModal = ({ onClose, onClone, theme }) => {
                             value={app}
                             onChange={(e) => setApp(e.target.value)}
                             className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${
-                                theme === 'dark' 
-                                ? 'bg-gray-700 border-gray-600 text-white' 
+                                theme === 'dark'
+                                ? 'bg-gray-700 border-gray-600 text-white'
                                 : 'bg-white border-gray-300'
                             }`}
                         >
@@ -2104,6 +2116,24 @@ const CloneModal = ({ onClose, onClone, theme }) => {
                                 <option key={option} value={option}>{option}</option>
                             ))}
                         </select>
+                    </div>
+                    <div>
+                        <label className={`block text-sm font-medium mb-1 ${
+                            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                            Tags
+                        </label>
+                        <input
+                            type="text"
+                            value={tags}
+                            onChange={(e) => setTags(e.target.value)}
+                            placeholder="e.g., analytics, user"
+                            className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${
+                                theme === 'dark'
+                                ? 'bg-gray-700 border-gray-600 text-white'
+                                : 'bg-white border-gray-300'
+                            }`}
+                        />
                     </div>
                 </div>
                 
@@ -2119,7 +2149,7 @@ const CloneModal = ({ onClose, onClone, theme }) => {
                         Cancel
                     </button>
                     <button
-                        onClick={() => onClone(name, app)}
+                        onClick={() => onClone(name, app, tags.split(',').map(t => t.trim()).filter(Boolean))}
                         disabled={!name}
                         className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
@@ -2142,6 +2172,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   const [viewMode, setViewMode] = useState('grid');
   const [showUnpublishModal, setShowUnpublishModal] = useState(null);
   const [showCloneModal, setShowCloneModal] = useState(null);
+  const permissions = getEnvPermissions(environment);
 
   const handleDeleteClick = (e, config) => {
     e.stopPropagation();
@@ -2158,8 +2189,8 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
     setShowCloneModal(configId);
   };
   
-  const handleCloneConfirm = (newName, newApp) => {
-      onCloneConfig(showCloneModal, newName, newApp);
+  const handleCloneConfirm = (newName, newApp, tags) => {
+      onCloneConfig(showCloneModal, newName, newApp, tags);
       setShowCloneModal(null);
   };
 
@@ -2284,8 +2315,8 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
         
         <button
             onClick={onCreateNew}
-            disabled={environment !== 'dev'}
-            title={environment !== 'dev' ? "API creation is only allowed in the Development environment" : "Create New API"}
+            disabled={!permissions.allowCreate}
+            title={!permissions.allowCreate ? "API creation is disabled in this environment" : "Create New API"}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed"
         >
             <Plus className="w-4 h-4" />
@@ -2341,18 +2372,18 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                  <span className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>v{config.versions.find(v => v.isCurrent)?.version}</span>
                    <div className="flex items-center gap-1">
                       <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
-                      {config.status === 'published' && environment === 'dev' && (
+                      {config.status === 'published' && permissions.allowEdit && (
                         <button onClick={(e) => handleUnpublishClick(e, config)} title="Unpublish" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-orange-400' : 'hover:bg-gray-100 text-orange-500'}`}><CloudOff className="w-4 h-4"/></button>
                     )}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'edit'); }} 
-                        title={config.status === 'published' ? "Unpublish to edit" : "Edit"} 
-                        disabled={config.status === 'published' || environment !== 'dev'} 
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'edit'); }}
+                        title={config.status === 'published' ? "Unpublish to edit" : "Edit"}
+                        disabled={config.status === 'published' || !permissions.allowEdit}
                         className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'} disabled:opacity-30 disabled:cursor-not-allowed`}
                     >
                         <Edit3 className="w-4 h-4"/>
                     </button>
-                    <button onClick={(e) => handleCloneClick(e, config.id)} title="Clone" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Copy className="w-4 h-4"/></button>
+                    <button onClick={(e) => handleCloneClick(e, config.id)} title="Clone" disabled={!permissions.allowClone} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'} disabled:opacity-30 disabled:cursor-not-allowed`}><Copy className="w-4 h-4"/></button>
                     <button onClick={(e) => handleDeleteClick(e, config)} title="Delete" disabled={environment === 'prod'} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-100 text-red-500'} disabled:opacity-30 disabled:cursor-not-allowed`}><Trash2 className="w-4 h-4"/></button>
                  </div>
               </div>
@@ -2420,18 +2451,18 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                     <td className="px-6 py-4 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
                           <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
-                          {config.status === 'published' && environment === 'dev' && (
+                          {config.status === 'published' && permissions.allowEdit && (
                             <button onClick={(e) => handleUnpublishClick(e, config)} title="Unpublish" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-orange-400' : 'hover:bg-gray-100 text-orange-500'}`}><CloudOff className="w-4 h-4"/></button>
                         )}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'edit'); }} 
-                            title={config.status === 'published' ? "Unpublish to edit" : "Edit"} 
-                            disabled={config.status === 'published' || environment !== 'dev'} 
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'edit'); }}
+                            title={config.status === 'published' ? "Unpublish to edit" : "Edit"}
+                            disabled={config.status === 'published' || !permissions.allowEdit}
                             className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'} disabled:opacity-30 disabled:cursor-not-allowed`}
                         >
                             <Edit3 className="w-4 h-4"/>
                         </button>
-                        <button onClick={(e) => handleCloneClick(e, config.id)} title="Clone" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Copy className="w-4 h-4"/></button>
+                        <button onClick={(e) => handleCloneClick(e, config.id)} title="Clone" disabled={!permissions.allowClone} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'} disabled:opacity-30 disabled:cursor-not-allowed`}><Copy className="w-4 h-4"/></button>
                         <button onClick={(e) => handleDeleteClick(e, config)} title="Delete" disabled={environment === 'prod'} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-100 text-red-500'} disabled:opacity-30 disabled:cursor-not-allowed`}><Trash2 className="w-4 h-4"/></button>
                     </div>
                   </td>
@@ -2565,14 +2596,15 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const [viewingVersion, setViewingVersion] = useState(null);
   const [cloningVersion, setCloningVersion] = useState(null);
   const currentVersion = useMemo(() => config.versions.find(v => v.isCurrent), [config.versions]);
+  const permissions = getEnvPermissions(environment);
 
   // Determine if the studio is in a read-only state based on mode, status, and environment.
   const isReadOnly = useMemo(() => {
       if (mode === 'view') return true;
-      if (environment !== 'dev') return true;
+      if (!permissions.allowEdit) return true;
       if (config.status === 'published') return true;
       return false;
-  }, [mode, config.status, environment]);
+  }, [mode, config.status, permissions]);
 
   useEffect(() => {
     if (viewingVersion && currentVersion && viewingVersion.id === currentVersion.id) {
@@ -2764,9 +2796,9 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     showToast(`Environment ${environment.toUpperCase()} depromoted`, 'info');
   };
   
-  const handleCloneConfirm = (newName, newApp) => {
+  const handleCloneConfirm = (newName, newApp, tags) => {
       if (cloningVersion) {
-          onCloneFromVersion(cloningVersion, newName, newApp);
+          onCloneFromVersion(cloningVersion, newName, newApp, tags);
           setCloningVersion(null);
       }
   };
@@ -2818,7 +2850,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               JSON View
             </button>
 
-            {environment === 'dev' && (
+            {permissions.allowEdit && (
               <button
                 onClick={() => onModeChange(mode === 'view' ? 'edit' : 'view')}
                 disabled={mode === 'view' && config.status === 'published'}
@@ -2886,7 +2918,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
                 </span>
               )}
 
-            {environment === 'dev' ? (
+            {permissions.allowEdit ? (
                 <>
                     <button
                         onClick={handleExecuteWorkflow}
@@ -4409,6 +4441,10 @@ const App = () => {
   }, []);
 
   const handleCreateNew = () => {
+    if (!getEnvPermissions(environment).allowCreate) {
+      showToast('API creation is disabled in this environment', 'error');
+      return;
+    }
     const newConfig = {
       id: `api_${Date.now()}`,
       name: 'New API Integration',
@@ -4459,7 +4495,11 @@ const App = () => {
     showToast('New API configuration created', 'success');
   };
   
-  const handleCloneConfig = (configId, newName, newApp) => {
+  const handleCloneConfig = (configId, newName, newApp, tags = []) => {
+    if (!getEnvPermissions(environment).allowClone) {
+      showToast('Cloning is disabled in this environment', 'error');
+      return;
+    }
     const configToClone = configs.find(c => c.id === configId);
     if (configToClone) {
         const newConfig = {
@@ -4470,6 +4510,7 @@ const App = () => {
             createdAt: new Date().toISOString(),
             modifiedAt: new Date().toISOString(),
             applications: [newApp], // Set the selected app
+            tags
         };
         newConfig.versions = [{
             id: `v_${Date.now()}`,
@@ -4488,8 +4529,12 @@ const App = () => {
     }
   };
   
-  const handleCloneFromVersion = (version, newName, newApp) => {
+  const handleCloneFromVersion = (version, newName, newApp, tags = []) => {
     if(!selectedConfig || !version) return;
+    if (!getEnvPermissions(environment).allowClone) {
+      showToast('Cloning is disabled in this environment', 'error');
+      return;
+    }
 
     const newConfig = {
         ...JSON.parse(JSON.stringify(selectedConfig)), // Deep clone base config
@@ -4499,6 +4544,7 @@ const App = () => {
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
         applications: [newApp],
+        tags,
         // Use the specific version's content
         workflow: version.content.workflow,
         inputSchema: version.content.inputSchema,
