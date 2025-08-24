@@ -1,0 +1,11 @@
+{
+  "categoryName": "appIntegrator_environments",
+  "environments": [
+    { "categoryId": "dev", "categoryValues": { "allowEdit": true, "allowClone": true, "allowCreate": true } },
+    { "categoryId": "qa", "categoryValues": { "allowEdit": false, "allowClone": false, "allowCreate": false } },
+    { "categoryId": "uat", "categoryValues": { "allowEdit": false, "allowClone": false, "allowCreate": false } },
+    { "categoryId": "prod", "categoryValues": { "allowEdit": false, "allowClone": false, "allowCreate": false } },
+    { "categoryId": "uatdr", "categoryValues": { "allowEdit": false, "allowClone": false, "allowCreate": false } },
+    { "categoryId": "dr", "categoryValues": { "allowEdit": false, "allowClone": false, "allowCreate": false } }
+  ]
+}
