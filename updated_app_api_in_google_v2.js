@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  Plus, Minus, Save, Play, FileText, Settings, Database, Link2,
+  Plus, Minus, Save, Play, Settings, Database, Link2,
   ChevronRight, Copy, Download, Eye, EyeOff, Trash2,
   GitBranch, TestTube, Globe, Key, Shield, Clock,
   ArrowRight, Square, Circle, Diamond, Zap, Filter,
@@ -1879,130 +1879,49 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     );
 };
 
-// Version History Modal
-const VersionHistoryModal = ({ config, theme, onClose, onMakeActive, onCloneFromVersion, environment }) => {
-    const promotedVersionId = config.environments[environment]?.promotedVersionId;
+// Version Dropdown
+const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersion, onCloneVersion, onMakeActive, environment }) => {
+    const dropdownRef = useRef(null);
+    useEffect(() => {
+        const handleClick = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [onClose]);
+
     const currentActiveVersionId = config.versions.find(v => v.isCurrent)?.id;
-    const [activationCandidate, setActivationCandidate] = useState(null);
-    const [viewingVersion, setViewingVersion] = useState(null);
-
-    const handleMakeActiveClick = (version) => {
-        if (version.isCurrent || environment !== 'dev') return;
-        setActivationCandidate(version);
-    };
-
-    const confirmMakeActive = () => {
-        if (activationCandidate) {
-            onMakeActive(activationCandidate.id);
-            setActivationCandidate(null);
-        }
-    };
-    
-    const VersionDetailView = ({ version, onCloseDetail }) => (
-        <div className={`mt-2 p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-2">
-                <h5 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>Configuration for v{version.version}</h5>
-                <button onClick={onCloseDetail} className={`text-sm ${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'}`}>Close</button>
-            </div>
-            <pre className={`text-xs p-2 rounded overflow-auto max-h-64 ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
-                {JSON.stringify(version.content, null, 2)}
-            </pre>
-        </div>
-    );
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className={`rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
-                <div className={`flex items-center justify-between p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                    <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                        Version History: {config.name}
-                    </h3>
-                    <button onClick={onClose} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
-                        <X className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
-                    </button>
+        <div ref={dropdownRef} className={`absolute right-0 mt-2 w-72 max-h-64 overflow-auto rounded-lg shadow-lg border z-50 ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+            {config.versions.sort((a,b) => b.version - a.version).map(version => (
+                <div
+                    key={version.id}
+                    className={`p-2 text-sm flex items-center justify-between cursor-pointer ${viewingVersion?.id === version.id ? (theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100') : ''}`}
+                    onClick={() => onSelectVersion(viewingVersion?.id === version.id ? null : version)}
+                >
+                    <span>v{version.version}</span>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onCloneVersion(version); }}
+                            className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+                            title="Clone"
+                        >
+                            <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onMakeActive(version.id); }}
+                            disabled={environment !== 'dev' || currentActiveVersionId === version.id}
+                            className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-100 text-blue-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title="Make Active"
+                        >
+                            <GitBranch className="w-3 h-3" />
+                        </button>
+                    </div>
                 </div>
-                
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {config.versions.sort((a,b) => b.version - a.version).map(version => {
-                        const isPromoted = promotedVersionId === version.id;
-                        const isCurrentActive = currentActiveVersionId === version.id;
-
-                        return (
-                            <div key={version.id} className={`p-4 rounded-lg border-2 transition-all ${
-                                isCurrentActive ? 'border-blue-500' : 
-                                isPromoted ? 'border-purple-500' :
-                                (theme === 'dark' ? 'border-gray-600' : 'border-gray-200')
-                            } ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <h4 className={`font-bold text-lg ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                            v{version.version}
-                                        </h4>
-                                        <div className="flex items-center gap-2">
-                                            {isCurrentActive && (
-                                                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 text-white">
-                                                    Active Dev Version
-                                                </span>
-                                            )}
-                                            {isPromoted && (
-                                                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500 text-white">
-                                                    Promoted in {environment.toUpperCase()}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <span className={`text-xs mt-2 sm:mt-0 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        {new Date(version.createdAt).toLocaleString()}
-                                    </span>
-                                </div>
-                                
-                                <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                                    {version.description || 'No description provided.'}
-                                </p>
-                                
-                                {activationCandidate?.id === version.id ? (
-                                    <div className={`p-3 rounded-lg border-2 border-yellow-500 ${theme === 'dark' ? 'bg-yellow-900/50' : 'bg-yellow-50'}`}>
-                                        <div className="flex items-center gap-3">
-                                            <AlertTriangle className="w-6 h-6 text-yellow-500 flex-shrink-0" />
-                                            <div>
-                                                <h5 className={`font-semibold ${theme === 'dark' ? 'text-yellow-300' : 'text-yellow-800'}`}>Confirm Activation</h5>
-                                                <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-700'}`}>
-                                                    This will revert the current development configuration to v{version.version}. Are you sure?
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-3 mt-3 justify-end">
-                                            <button onClick={() => setActivationCandidate(null)} className={`px-3 py-1 text-sm rounded-lg ${theme === 'dark' ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}>Cancel</button>
-                                            <button onClick={confirmMakeActive} className="px-3 py-1 text-sm rounded-lg bg-yellow-500 hover:bg-yellow-600 text-white">Confirm</button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-end gap-2">
-                                        <button onClick={() => setViewingVersion(viewingVersion?.id === version.id ? null : version)} className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${theme === 'dark' ? 'border-gray-600 hover:bg-gray-600' : 'border-gray-300 hover:bg-gray-100'}`}>
-                                            <FileText className="w-4 h-4" />
-                                            {viewingVersion?.id === version.id ? 'Hide Config' : 'View Config'}
-                                        </button>
-                                        <button onClick={() => onCloneFromVersion(version)} className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${theme === 'dark' ? 'border-gray-600 hover:bg-gray-600' : 'border-gray-300 hover:bg-gray-100'}`}>
-                                            <Copy className="w-4 h-4" />
-                                            Clone
-                                        </button>
-                                        <button
-                                            onClick={() => handleMakeActiveClick(version)}
-                                            disabled={isCurrentActive || environment !== 'dev'}
-                                            title={environment !== 'dev' ? 'Only available in DEV environment' : (isCurrentActive ? 'This is the current active version' : `Make v${version.version} the active version`)}
-                                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white"
-                                        >
-                                            <GitBranch className="w-4 h-4"/>
-                                            Make Active
-                                        </button>
-                                    </div>
-                                )}
-                                {viewingVersion?.id === version.id && <VersionDetailView version={viewingVersion} onCloseDetail={() => setViewingVersion(null)} />}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
+            ))}
         </div>
     );
 };
@@ -2372,8 +2291,9 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
               
               <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
                  <span className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>v{config.versions.find(v => v.isCurrent)?.version}</span>
-                 <div className="flex items-center gap-1">
-                    {config.status === 'published' && environment === 'dev' && (
+                   <div className="flex items-center gap-1">
+                      <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
+                      {config.status === 'published' && environment === 'dev' && (
                         <button onClick={(e) => handleUnpublishClick(e, config)} title="Unpublish" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-orange-400' : 'hover:bg-gray-100 text-orange-500'}`}><CloudOff className="w-4 h-4"/></button>
                     )}
                     <button 
@@ -2449,9 +2369,10 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                   <td className={`px-6 py-4 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
                     {config.applications.join(', ')}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1">
-                        {config.status === 'published' && environment === 'dev' && (
+                    <td className="px-6 py-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
+                          <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
+                          {config.status === 'published' && environment === 'dev' && (
                             <button onClick={(e) => handleUnpublishClick(e, config)} title="Unpublish" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-orange-400' : 'hover:bg-gray-100 text-orange-500'}`}><CloudOff className="w-4 h-4"/></button>
                         )}
                         <button 
@@ -2592,7 +2513,8 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [testInputs, setTestInputs] = useState({});
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
+  const [viewingVersion, setViewingVersion] = useState(null);
   const [cloningVersion, setCloningVersion] = useState(null);
 
   // Determine if the studio is in a read-only state based on mode, status, and environment.
@@ -2800,17 +2722,31 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               JSON View
             </button>
             
-            <button
-              onClick={() => setShowVersionHistory(true)}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
-                theme === 'dark' 
-                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <FileStack className="w-4 h-4" />
-              Versions
-            </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                    theme === 'dark'
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <FileStack className="w-4 h-4" />
+                  Versions
+                </button>
+                {showVersionDropdown && (
+                  <VersionDropdown
+                    config={config}
+                    theme={theme}
+                    onClose={() => setShowVersionDropdown(false)}
+                    onSelectVersion={setViewingVersion}
+                    viewingVersion={viewingVersion}
+                    onCloneVersion={(version) => { setShowVersionDropdown(false); setCloningVersion(version); }}
+                    onMakeActive={(versionId) => { setShowVersionDropdown(false); onMakeVersionActive(versionId); }}
+                    environment={environment}
+                  />
+                )}
+              </div>
 
             {environment === 'dev' && (
                 <>
@@ -2851,6 +2787,16 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
         </div>
       </div>
       
+      {viewingVersion && (
+        <div className={`mt-4 p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <h5 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>Configuration for v{viewingVersion.version}</h5>
+            <button onClick={() => setViewingVersion(null)} className={`text-sm ${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'}`}>Close</button>
+          </div>
+          <pre className={`text-xs p-2 rounded overflow-auto max-h-64 ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>{JSON.stringify(viewingVersion.content, null, 2)}</pre>
+        </div>
+      )}
+
       {/* Main content area */}
       <div className="flex-1 overflow-hidden">
         <WorkflowDesigner
@@ -2886,22 +2832,8 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           versions={config.versions}
         />
       )}
-      
-      {showVersionHistory && (
-        <VersionHistoryModal
-            config={config}
-            theme={theme}
-            onClose={() => setShowVersionHistory(false)}
-            onMakeActive={onMakeVersionActive}
-            onCloneFromVersion={(version) => {
-                setShowVersionHistory(false);
-                setCloningVersion(version);
-            }}
-            environment={environment}
-        />
-      )}
       {cloningVersion && (
-          <CloneModal 
+          <CloneModal
             onClose={() => setCloningVersion(null)}
             onClone={handleCloneConfirm}
             theme={theme}
@@ -4106,7 +4038,7 @@ const App = () => {
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['weather', 'rest', 'transform'],
-        applications: ['Dashboard App', 'Mobile Weather'],
+        applications: ['Dashboard App'],
         inputSchema: { 
             city: { type: "string", required: true, description: "The city name for the weather forecast.", example: "London" },
             unit: { type: "string", required: false, description: "Temperature unit (celsius or fahrenheit).", example: "celsius" } 
@@ -4180,7 +4112,7 @@ const App = () => {
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['graphql', 'aggregation', 'multi-api'],
-        applications: ['CRM', 'Analytics Platform'],
+        applications: ['CRM'],
         inputSchema: { userId: {type: "string", required: true, description: "The ID of the user to fetch.", example: "user-123"} },
         outputSchema: { userData: {type: "object", description: "Aggregated user data."} },
         workflow: {
@@ -4252,7 +4184,7 @@ const App = () => {
         createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['products', 'e-commerce', 'inventory'],
-        applications: ['Web Storefront', 'Inventory Management'],
+        applications: ['Web Storefront'],
         inputSchema: { productId: { type: "string", required: true, description: "The unique ID of the product.", example: "prod-987" } },
         outputSchema: { name: { type: "string", description: "Product name." }, price: { type: "number", description: "Product price." }, inStock: { type: "boolean", description: "Inventory status." } },
         workflow: { nodes: [], edges: [] },
@@ -4280,18 +4212,18 @@ const App = () => {
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['social', 'automation', 'draft'],
-        applications: [],
-        inputSchema: {},
-        outputSchema: {},
-        workflow: { nodes: [], edges: [] },
+        applications: ['Social Scheduler'],
+        inputSchema: { message: { type: "string", required: true, description: "Status update text.", example: "Hello world" } },
+        outputSchema: { postId: { type: "string", description: "ID of created post." } },
+        workflow: { nodes: [ { id: 'start_1', type: 'start', position: { x: 100, y: 200 }, data: { label: 'Start', status: 'idle' } }, { id: 'api_1', type: 'api', position: { x: 300, y: 200 }, data: { label: 'Post Update', apiType: 'REST', method: 'POST', endpoint: 'https://api.social.example.com/post', status: 'idle' } }, { id: 'end_1', type: 'end', position: { x: 500, y: 200 }, data: { label: 'End', status: 'idle' } } ], edges: [ { id: 'e1', source: 'start_1', target: 'api_1', animated: false }, { id: 'e2', source: 'api_1', target: 'end_1', animated: false } ] },
         environments: { dev: {}, qa: {}, uat: {}, prod: {} },
-        versions: [
-            { id: 'v1', version: 1, createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), description: 'Initial draft', content: {
-                workflow: { nodes: [], edges: []},
-                inputSchema: {},
-                outputSchema: {}
-            } , isCurrent: true},
-        ],
+          versions: [
+              { id: 'v1', version: 1, createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), description: 'Initial draft', content: {
+                workflow: { nodes: [ { id: 'start_1', type: 'start', position: { x: 100, y: 200 }, data: { label: 'Start', status: 'idle' } }, { id: 'api_1', type: 'api', position: { x: 300, y: 200 }, data: { label: 'Post Update', apiType: 'REST', method: 'POST', endpoint: 'https://api.social.example.com/post', status: 'idle' } }, { id: 'end_1', type: 'end', position: { x: 500, y: 200 }, data: { label: 'End', status: 'idle' } } ], edges: [ { id: 'e1', source: 'start_1', target: 'api_1', animated: false }, { id: 'e2', source: 'api_1', target: 'end_1', animated: false } ]},
+                inputSchema: { message: { type: "string", required: true, description: "Status update text.", example: "Hello world" } },
+                outputSchema: { postId: { type: "string", description: "ID of created post." } }
+              } , isCurrent: true},
+          ],
         testSuites: [],
       },
       {
@@ -4303,7 +4235,7 @@ const App = () => {
         createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['payment', 'transactions', 'secure'],
-        applications: ['Web Storefront', 'Mobile App'],
+        applications: ['Web Storefront'],
         inputSchema: { amount: { type: "number", required: true, description: "Transaction amount.", example: 99.99 }, currency: { type: "string", required: true, description: "Currency code (e.g., USD).", example: "USD" } },
         outputSchema: { transactionId: { type: "string", description: "Unique transaction ID." }, status: { type: "string", description: "Transaction status." } },
         workflow: { nodes: [], edges: [] },
@@ -4338,7 +4270,7 @@ const App = () => {
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
       tags: [],
-      applications: [],
+      applications: ['New App'],
       inputSchema: {},
       outputSchema: {},
       workflow: {
