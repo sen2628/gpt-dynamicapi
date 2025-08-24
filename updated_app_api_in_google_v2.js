@@ -874,20 +874,48 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
 
   const handleDepromote = (env) => {
     if (!window.confirm(`Depromote ${env.toUpperCase()} environment?`)) return;
+    const history = config.environments[env]?.promotionHistory || [];
+    const newHistory = history.slice(0, -1);
+    const last = newHistory[newHistory.length - 1];
     const updatedConfig = {
       ...config,
       environments: {
         ...config.environments,
         [env]: {
           ...config.environments[env],
-          promotedVersionId: null,
-          promotedFrom: null,
-          lastPromotion: null
+          promotedVersionId: last?.versionId || null,
+          promotedFrom: last?.promotedFrom || null,
+          lastPromotion: last?.date || null,
+          promotionHistory: newHistory
         }
       }
     };
     onUpdate(updatedConfig);
     showToast('Environment depromoted', 'info');
+  };
+
+  const handleRollback = (env, index) => {
+    const history = config.environments[env]?.promotionHistory || [];
+    const target = history[index];
+    if (!target) return;
+    const versionNumber = config.versions.find(v => v.id === target.versionId)?.version;
+    if (!window.confirm(`Rollback ${env.toUpperCase()} to version v${versionNumber}?`)) return;
+    const newHistory = history.slice(0, index + 1);
+    const updatedConfig = {
+      ...config,
+      environments: {
+        ...config.environments,
+        [env]: {
+          ...config.environments[env],
+          promotionHistory: newHistory,
+          promotedVersionId: target.versionId,
+          promotedFrom: target.promotedFrom,
+          lastPromotion: target.date
+        }
+      }
+    };
+    onUpdate(updatedConfig);
+    showToast(`Rolled back ${env.toUpperCase()} to v${versionNumber}`, 'info');
   };
   
   return (
@@ -1054,6 +1082,35 @@ const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showT
                   This environment is running version v{config.versions.find(v => v.id === config.environments[selectedEnv]?.promotedVersionId)?.version} promoted from {config.environments[selectedEnv].promotedFrom?.toUpperCase()} on {' '}
                   {new Date(config.environments[selectedEnv].lastPromotion).toLocaleDateString()}
                 </p>
+              </div>
+            </div>
+          )}
+          {/* Promotion History */}
+          {(config.environments[selectedEnv]?.promotionHistory || []).length > 0 && (
+            <div className="mt-6">
+              <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>
+                Promotion History
+              </h4>
+              <div className="space-y-2">
+                {config.environments[selectedEnv].promotionHistory.map((entry, idx) => {
+                  const version = config.versions.find(v => v.id === entry.versionId);
+                  const isCurrent = idx === config.environments[selectedEnv].promotionHistory.length - 1;
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                        v{version?.version} from {entry.promotedFrom?.toUpperCase()} on {new Date(entry.date).toLocaleDateString()}
+                      </span>
+                      {!isCurrent && (
+                        <button
+                          onClick={() => handleRollback(selectedEnv, idx)}
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          Rollback
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2661,6 +2718,12 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     if (!promotedVersion) return;
     if (!window.confirm(`Promote version v${promotedVersion.version} from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
 
+    const timestamp = new Date().toISOString();
+    const updatedHistory = [
+      ...(config.environments[toEnv]?.promotionHistory || []),
+      { versionId: promotedVersion.id, promotedFrom: fromEnv, date: timestamp }
+    ];
+
     const updatedConfig = {
       ...config,
       environments: {
@@ -2668,8 +2731,9 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
         [toEnv]: {
           ...config.environments[toEnv],
           promotedVersionId: promotedVersion.id,
-          lastPromotion: new Date().toISOString(),
-          promotedFrom: fromEnv
+          lastPromotion: timestamp,
+          promotedFrom: fromEnv,
+          promotionHistory: updatedHistory
         }
       }
     };
@@ -2680,15 +2744,19 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 
   const handleDepromote = () => {
     if (!window.confirm(`Depromote environment ${environment.toUpperCase()}?`)) return;
+    const history = config.environments[environment]?.promotionHistory || [];
+    const newHistory = history.slice(0, -1);
+    const last = newHistory[newHistory.length - 1];
     const updatedConfig = {
       ...config,
       environments: {
         ...config.environments,
         [environment]: {
           ...config.environments[environment],
-          promotedVersionId: null,
-          promotedFrom: null,
-          lastPromotion: null
+          promotedVersionId: last?.versionId || null,
+          promotedFrom: last?.promotedFrom || null,
+          lastPromotion: last?.date || null,
+          promotionHistory: newHistory
         }
       }
     };
@@ -4143,10 +4211,10 @@ const App = () => {
         },
         
         environments: {
-          dev: { active: true, variables: { WEATHER_API_KEY: 'dev_key_12345', BASE_URL: 'https://api-dev.weatherapi.com' }, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          qa: { active: false, variables: { WEATHER_API_KEY: 'qa_key_67890', BASE_URL: 'https://api-qa.weatherapi.com' }, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null }
+          dev: { active: true, variables: { WEATHER_API_KEY: 'dev_key_12345', BASE_URL: 'https://api-dev.weatherapi.com' }, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          qa: { active: false, variables: { WEATHER_API_KEY: 'qa_key_67890', BASE_URL: 'https://api-qa.weatherapi.com' }, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] }
         },
         versions: [
             { id: 'v1', version: 1, createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(), description: 'Initial version', content: { 
@@ -4217,10 +4285,10 @@ const App = () => {
         },
         
         environments: {
-          dev: { active: true, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          qa: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-          prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null }
+          dev: { active: true, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          qa: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+          prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] }
         },
         versions: [
              { id: 'v1', version: 1, createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(), description: 'Initial version', content: {
@@ -4362,12 +4430,12 @@ const App = () => {
       },
       
       environments: {
-        dev: { active: true, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-        qa: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-        uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-        prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-        uatdr: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
-        dr: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null },
+        dev: { active: true, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+        qa: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+        uat: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+        prod: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+        uatdr: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
+        dr: { active: false, variables: {}, promotedVersionId: null, promotedFrom: null, lastPromotion: null, promotionHistory: [] },
       },
       versions: [
           { id: 'v1', version: 1, createdAt: new Date().toISOString(), description: 'Initial draft', content: {
@@ -4655,6 +4723,11 @@ const App = () => {
     if (!window.confirm(`Promote from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
     const updatedConfigs = configs.map(config => {
       if (config.id === selectedConfig?.id) {
+        const timestamp = new Date().toISOString();
+        const updatedHistory = [
+          ...(config.environments[toEnv]?.promotionHistory || []),
+          { versionId, promotedFrom: fromEnv, date: timestamp }
+        ];
         const updatedConfig = {
           ...config,
           environments: {
@@ -4662,8 +4735,9 @@ const App = () => {
             [toEnv]: {
               ...config.environments[toEnv],
               promotedVersionId: versionId,
-              lastPromotion: new Date().toISOString(),
-              promotedFrom: fromEnv
+              lastPromotion: timestamp,
+              promotedFrom: fromEnv,
+              promotionHistory: updatedHistory
             }
           }
         };
