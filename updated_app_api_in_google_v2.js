@@ -2822,17 +2822,6 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           </div>
         </div>
       </div>
-      
-      {viewingVersion && (
-        <div className={`mt-4 p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center justify-between mb-2">
-            <h5 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>Configuration for v{viewingVersion.version}</h5>
-            <button onClick={() => setViewingVersion(null)} className={`text-sm ${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'}`}>Close</button>
-          </div>
-          <pre className={`text-xs p-2 rounded overflow-auto max-h-64 ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>{JSON.stringify(viewingVersion.content, null, 2)}</pre>
-        </div>
-      )}
-
       {/* Main content area */}
       <div className="flex-1 overflow-hidden">
         <WorkflowDesigner
@@ -2852,7 +2841,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
       {/* Modals rendered on top */}
       {showJsonEditor && (
         <JsonEditor
-          config={config}
+          config={viewingVersion ? { ...config, ...viewingVersion.content } : config}
           theme={theme}
           onClose={() => setShowJsonEditor(false)}
         />
