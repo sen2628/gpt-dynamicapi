@@ -1902,7 +1902,7 @@ const VersionDropdown = ({ config, theme, onClose, onSelectVersion, viewingVersi
                     className={`p-2 text-sm flex items-center justify-between cursor-pointer ${viewingVersion?.id === version.id ? (theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100') : ''}`}
                     onClick={() => onSelectVersion(viewingVersion?.id === version.id ? null : version)}
                 >
-                    <span>v{version.version}</span>
+                    <span className="flex items-center gap-1">v{version.version}{version.isCurrent && <span className="text-xs text-green-500">active</span>}</span>
                     <div className="flex items-center gap-1">
                         <button
                             onClick={(e) => { e.stopPropagation(); onCloneVersion(version); }}
@@ -2516,6 +2516,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [viewingVersion, setViewingVersion] = useState(null);
   const [cloningVersion, setCloningVersion] = useState(null);
+  const currentVersion = useMemo(() => config.versions.find(v => v.isCurrent), [config.versions]);
 
   // Determine if the studio is in a read-only state based on mode, status, and environment.
   const isReadOnly = useMemo(() => {
@@ -2524,6 +2525,19 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
       if (config.status === 'published') return true;
       return false;
   }, [mode, config.status, environment]);
+
+  useEffect(() => {
+    if (viewingVersion && currentVersion && viewingVersion.id === currentVersion.id) {
+      setViewingVersion({
+        ...currentVersion,
+        content: {
+          workflow: config.workflow,
+          inputSchema: config.inputSchema,
+          outputSchema: config.outputSchema
+        }
+      });
+    }
+  }, [config.workflow, config.inputSchema, config.outputSchema, currentVersion, viewingVersion]);
 
 
   const handleSave = () => {
@@ -2729,10 +2743,16 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
                     theme === 'dark'
                       ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
                       : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  } ${
+                    viewingVersion && viewingVersion.id !== currentVersion?.id
+                      ? theme === 'dark'
+                        ? 'bg-yellow-900 border-yellow-700 text-yellow-300'
+                        : 'bg-yellow-100 border-yellow-300 text-yellow-800'
+                      : ''
                   }`}
                 >
                   <FileStack className="w-4 h-4" />
-                  Versions
+                  {viewingVersion ? `v${viewingVersion.version}` : 'Versions'}
                 </button>
                 {showVersionDropdown && (
                   <VersionDropdown
@@ -2747,6 +2767,22 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
                   />
                 )}
               </div>
+              {viewingVersion && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded border ${
+                    viewingVersion.id === currentVersion?.id
+                      ? theme === 'dark'
+                        ? 'border-green-700 text-green-300'
+                        : 'border-green-300 text-green-700'
+                      : theme === 'dark'
+                        ? 'border-yellow-700 text-yellow-300'
+                        : 'border-yellow-300 text-yellow-800'
+                  }`}
+                >
+                  Viewing v{viewingVersion.version}
+                  {viewingVersion.id === currentVersion?.id ? '' : ' (not active)'}
+                </span>
+              )}
 
             {environment === 'dev' && (
                 <>
