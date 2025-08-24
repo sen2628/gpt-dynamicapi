@@ -324,17 +324,22 @@ const transformConfigToUserFormat = (config) => {
 
 
 // JSON Editor Component (MODIFIED to be a read-only view)
-const JsonEditor = ({ config, theme, onClose }) => {
+const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
   // Generate the user-facing JSON using the transformation logic
   const userFormattedJson = useMemo(() => {
     const formatted = transformConfigToUserFormat(config);
     return JSON.stringify(formatted, null, 2);
   }, [config]);
 
+  const [jsonText, setJsonText] = useState(userFormattedJson);
+  useEffect(() => {
+    setJsonText(userFormattedJson);
+  }, [userFormattedJson]);
+
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = () => {
-    const text = userFormattedJson;
+    const text = jsonText;
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -388,15 +393,18 @@ const JsonEditor = ({ config, theme, onClose }) => {
           <div className={`p-3 mb-4 rounded-lg flex items-center gap-3 ${theme === 'dark' ? 'bg-blue-900/50' : 'bg-blue-50'}`}>
             <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />
             <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-800'}`}>
-              This is a read-only view showing the final JSON structure based on your workflow configuration.
+              {isReadOnly
+                ? 'This is a read-only view showing the final JSON structure based on your workflow configuration.'
+                : 'Edit the configuration JSON below.'}
             </p>
           </div>
           <textarea
-            value={userFormattedJson}
-            readOnly // This view is not for editing
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            readOnly={isReadOnly}
             className={`w-full flex-1 p-4 font-mono text-sm rounded-lg border resize-none ${
-              theme === 'dark' 
-                ? 'bg-gray-800 border-gray-700 text-gray-300' 
+              theme === 'dark'
+                ? 'bg-gray-800 border-gray-700 text-gray-300'
                 : 'bg-white border-gray-200 text-gray-900'
             }`}
             spellCheck={false}
@@ -412,11 +420,9 @@ const JsonEditor = ({ config, theme, onClose }) => {
 const PromoteModal = ({ config, onPromote, onClose, theme, fromEnv, versions }) => {
   const promotionPaths = {
     dev: ['qa'],
-    qa: ['uat', 'uatdr'],
-    uat: ['prod', 'dr'],
-    uatdr: [],
+    qa: ['uat'],
+    uat: ['prod'],
     prod: [],
-    dr: [],
   };
 
   const availableTargets = promotionPaths[fromEnv] || [];
@@ -804,7 +810,9 @@ const SubscriberDashboard = ({ theme }) => {
 
 // Environment Manager Component
 const EnvironmentManager = ({ config, onUpdate, currentEnvironment, theme, showToast, onPromote }) => {
-  const environments = envConfig.environments.map(e => e.categoryId);
+  const environments = envConfig.environments
+    .map(e => e.categoryId)
+    .filter(env => env !== 'uatdr' && env !== 'dr');
   const [selectedEnv, setSelectedEnv] = useState(currentEnvironment);
   const [showSecrets, setShowSecrets] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
@@ -2222,25 +2230,23 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   // Builder Dashboard
   return (
     <div className={`p-6 overflow-y-auto h-full ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Filters and Actions */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      {/* Filters, stats and actions */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <select
               value={environment}
               onChange={(e) => onEnvironmentChange(e.target.value)}
               className={`px-3 py-1.5 rounded-lg text-sm ${
-                  theme === 'dark' 
-                  ? 'bg-gray-800 border-gray-700 text-white' 
+                  theme === 'dark'
+                  ? 'bg-gray-800 border-gray-700 text-white'
                   : 'bg-white border-gray-200'
               } border focus:ring-2 focus:ring-blue-500`}
             >
               <option value="dev">Development</option>
               <option value="qa">QA</option>
               <option value="uat">UAT</option>
-              <option value="uatdr">UAT DR</option>
               <option value="prod">PROD</option>
-              <option value="dr">DR</option>
             </select>
           </div>
           {/* Filter */}
@@ -2248,7 +2254,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className={`px-4 py-2 rounded-lg border ${
-              theme === 'dark' 
+              theme === 'dark'
                   ? 'bg-gray-800 border-gray-700 text-white' 
                   : 'bg-white border-gray-200'
               } focus:ring-2 focus:ring-blue-500`}
@@ -2272,7 +2278,22 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             <option value="name">Name</option>
             <option value="status">Status</option>
           </select>
-          
+          {/* Config statistics */}
+          <div className="flex gap-6 items-center">
+            <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
+              theme === 'dark' ? 'border-blue-500 text-white' : 'border-blue-600 text-gray-900'
+            }`}>
+              <span className="text-xl font-bold">{totalConfigs}</span>
+              <span className="text-xs mt-1 text-center whitespace-nowrap">Total Configs</span>
+            </div>
+            <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
+              theme === 'dark' ? 'border-green-500 text-white' : 'border-green-600 text-gray-900'
+            }`}>
+              <span className="text-xl font-bold">{totalPublished}</span>
+              <span className="text-xs mt-1 text-center whitespace-nowrap">Published</span>
+            </div>
+          </div>
+
           {/* View Mode */}
           <div className={`flex items-center gap-1 p-1 rounded-lg ${
             theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'
@@ -2280,7 +2301,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             <button
               onClick={() => setViewMode('grid')}
               className={`p-1.5 rounded ${
-                viewMode === 'grid' 
+                viewMode === 'grid'
                   ? theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm'
                   : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
               }`}
@@ -2290,7 +2311,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             <button
               onClick={() => setViewMode('list')}
               className={`p-1.5 rounded ${
-                viewMode === 'list' 
+                viewMode === 'list'
                   ? theme === 'dark' ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm'
                   : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
               }`}
@@ -2299,7 +2320,6 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             </button>
           </div>
         </div>
-        
         <button
             onClick={onCreateNew}
             disabled={!permissions.allowCreate}
@@ -2309,22 +2329,6 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             <Plus className="w-4 h-4" />
             Create New API
         </button>
-      </div>
-
-      {/* Config statistics */}
-      <div className="flex gap-6 mb-6">
-        <div className={`flex flex-col items-center justify-center w-24 h-24 rounded-full border-4 ${
-          theme === 'dark' ? 'border-blue-500 text-white' : 'border-blue-600 text-gray-900'
-        }`}>
-          <span className="text-2xl font-bold">{totalConfigs}</span>
-          <span className="text-xs mt-1 text-center whitespace-nowrap">Total Configs</span>
-        </div>
-        <div className={`flex flex-col items-center justify-center w-24 h-24 rounded-full border-4 ${
-          theme === 'dark' ? 'border-green-500 text-white' : 'border-green-600 text-gray-900'
-        }`}>
-          <span className="text-2xl font-bold">{totalPublished}</span>
-          <span className="text-xs mt-1 text-center whitespace-nowrap">Published</span>
-        </div>
       </div>
 
       {/* API Grid/List */}
@@ -2748,34 +2752,39 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     showToast('Workflow executed successfully', 'success');
   };
   
-  const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
-    const promotedVersion = config.versions.find(v => v.id === versionId);
-    if (!promotedVersion) return;
-    if (!window.confirm(`Promote version v${promotedVersion.version} from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
+    const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
+      const promotedVersion = config.versions.find(v => v.id === versionId);
+      if (!promotedVersion) return;
+      if (!window.confirm(`Promote version v${promotedVersion.version} from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}?`)) return;
 
-    const timestamp = new Date().toISOString();
-    const updatedHistory = [
-      ...(config.environments[toEnv]?.promotionHistory || []),
-      { versionId: promotedVersion.id, promotedFrom: fromEnv, date: timestamp }
-    ];
+      const timestamp = new Date().toISOString();
+      const targets = [toEnv];
+      if (toEnv === 'uat') targets.push('uatdr');
+      if (toEnv === 'prod') targets.push('dr');
 
-    const updatedConfig = {
-      ...config,
-      environments: {
-        ...config.environments,
-        [toEnv]: {
-          ...config.environments[toEnv],
+      const updatedEnvironments = { ...config.environments };
+      targets.forEach(target => {
+        const history = [
+          ...(config.environments[target]?.promotionHistory || []),
+          { versionId: promotedVersion.id, promotedFrom: fromEnv, date: timestamp }
+        ];
+        updatedEnvironments[target] = {
+          ...config.environments[target],
           promotedVersionId: promotedVersion.id,
           lastPromotion: timestamp,
           promotedFrom: fromEnv,
-          promotionHistory: updatedHistory
-        }
-      }
+          promotionHistory: history
+        };
+      });
+
+      const updatedConfig = {
+        ...config,
+        environments: updatedEnvironments
+      };
+      onUpdate(updatedConfig);
+      setShowPromoteModal(false);
+      showToast(`Configuration version v${promotedVersion.version} promoted from ${fromEnv.toUpperCase()} to ${targets.map(t => t.toUpperCase()).join(', ')}`, 'success');
     };
-    onUpdate(updatedConfig);
-    setShowPromoteModal(false);
-    showToast(`Configuration version v${promotedVersion.version} promoted from ${fromEnv.toUpperCase()} to ${toEnv.toUpperCase()}`, 'success');
-  };
 
   const handleDepromote = () => {
     if (!window.confirm(`Depromote environment ${environment.toUpperCase()}?`)) return;
@@ -2833,6 +2842,18 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                 Last modified {new Date(config.modifiedAt).toLocaleDateString()}
               </p>
+              <input
+                type="text"
+                value={(config.tags || []).join(', ')}
+                readOnly={isReadOnly}
+                onChange={(e) => onUpdate({ ...config, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                placeholder="tags (comma separated)"
+                className={`mt-1 text-xs px-2 py-1 rounded border ${
+                  theme === 'dark'
+                    ? 'bg-gray-800 border-gray-700 text-gray-300'
+                    : 'bg-white border-gray-300 text-gray-700'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              />
             </div>
           </div>
           
@@ -3000,6 +3021,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           config={viewingVersion ? { ...config, ...viewingVersion.content } : config}
           theme={theme}
           onClose={() => setShowJsonEditor(false)}
+          isReadOnly={isReadOnly}
         />
       )}
       
