@@ -452,10 +452,18 @@ const transformConfigToUserFormat = (config) => {
                     break;
 
                 case 'aggregate':
-                     transformations.push({
-                        type: 'aggregate',
-                        groupBy: node.data.groupBy || [],
-                        operations: node.data.operations || []
+                    transformations.push({
+                        op: 'group_by',
+                        target: node.data.target || '',
+                        config: {
+                            groupBy: node.data.groupBy || [],
+                            metrics: node.data.metrics || [],
+                            having: node.data.having || [],
+                            orderBy: node.data.orderBy || [],
+                            limit: node.data.limit,
+                            pivot: node.data.pivot,
+                            rollup: node.data.rollup || false
+                        }
                     });
                     break;
 
@@ -3511,7 +3519,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
     { type: 'graphql', label: 'GraphQL', icon: Cpu, color: 'purple', description: 'Execute GraphQL queries' },
     { type: 'transform', label: 'Transform', icon: GitBranch, color: 'green', description: 'Transform data structure' },
     { type: 'filter', label: 'Filter', icon: Filter, color: 'orange', description: 'Filter data based on conditions' },
-    { type: 'aggregate', label: 'Aggregate', icon: Database, color: 'red', description: 'Aggregate and combine data' },
+    { type: 'aggregate', label: 'Group By', icon: Database, color: 'red', description: 'Group data with metrics' },
     { type: 'condition', label: 'Condition', icon: Diamond, color: 'yellow', description: 'Conditional branching' }
   ];
 
@@ -5150,60 +5158,296 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
             </div>
             )}
             
-            {/* Aggregate Configuration */}
+            {/* Group By Configuration */}
             {node.type === 'aggregate' && (
             <>
                 <div>
-                <label className={`block text-sm font-medium mb-1 ${
+                  <label className={`block text-sm font-medium mb-1 ${
                     theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                }`}>
-                    Aggregation Type
-                </label>
-                <select
-                    value={node.data.aggregationType || 'merge'}
-                    disabled={isReadOnly}
+                  }`}>
+                    Target
+                  </label>
+                  <input
+                    type="text"
+                    value={node.data.target || ''}
+                    readOnly={isReadOnly}
                     onChange={(e) => onUpdate({
-                    ...node,
-                    data: { ...node.data, aggregationType: e.target.value }
+                      ...node,
+                      data: { ...node.data, target: e.target.value }
                     })}
                     className={`w-full px-3 py-2 rounded-lg border ${
-                    theme === 'dark'
+                      theme === 'dark'
                         ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300'
                     } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                >
-                    <option value="merge">Merge Objects</option>
-                    <option value="concat">Concatenate Arrays</option>
-                    <option value="sum">Sum Values</option>
-                    <option value="average">Average Values</option>
-                    <option value="count">Count Items</option>
-                    <option value="group">Group By Field</option>
-                </select>
+                  />
                 </div>
-                {['sum','average','count','group'].includes(node.data.aggregationType) && (
-                  <div className="mt-2">
-                    <label className={`block text-sm font-medium mb-1 ${
-                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      Field
-                    </label>
-                    <input
-                      type="text"
-                      list={fieldOptionsId}
-                      value={node.data.field || ''}
-                      readOnly={isReadOnly}
-                      onChange={(e) => onUpdate({
-                        ...node,
-                        data: { ...node.data, field: e.target.value }
-                      })}
-                      className={`w-full px-3 py-2 rounded-lg border ${
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Group By Fields
+                  </label>
+                  <input
+                    type="text"
+                    value={(node.data.groupBy || []).join(',')}
+                    readOnly={isReadOnly}
+                    onChange={(e) => onUpdate({
+                      ...node,
+                      data: { ...node.data, groupBy: e.target.value.split(',').map(f => f.trim()).filter(Boolean) }
+                    })}
+                    placeholder="field1,field2"
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Metrics
+                  </label>
+                  {(node.data.metrics || []).map((m, idx) => (
+                    <div key={idx} className="flex items-center gap-2 mb-1">
+                      <input
+                        type="text"
+                        placeholder="alias"
+                        value={m.alias || ''}
+                        readOnly={isReadOnly}
+                        onChange={(e) => {
+                          const metrics = [...(node.data.metrics || [])];
+                          metrics[idx] = { ...metrics[idx], alias: e.target.value };
+                          onUpdate({ ...node, data: { ...node.data, metrics } });
+                        }}
+                        className={`flex-1 px-2 py-1 rounded border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      />
+                      <select
+                        value={m.op || 'count'}
+                        disabled={isReadOnly}
+                        onChange={(e) => {
+                          const metrics = [...(node.data.metrics || [])];
+                          metrics[idx] = { ...metrics[idx], op: e.target.value };
+                          onUpdate({ ...node, data: { ...node.data, metrics } });
+                        }}
+                        className={`px-2 py-1 rounded border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      >
+                        <option value="count">count</option>
+                        <option value="sum">sum</option>
+                        <option value="avg">avg</option>
+                        <option value="min">min</option>
+                        <option value="max">max</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="field"
+                        value={m.field || ''}
+                        readOnly={isReadOnly}
+                        onChange={(e) => {
+                          const metrics = [...(node.data.metrics || [])];
+                          metrics[idx] = { ...metrics[idx], field: e.target.value };
+                          onUpdate({ ...node, data: { ...node.data, metrics } });
+                        }}
+                        className={`flex-1 px-2 py-1 rounded border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      />
+                      {!isReadOnly && (
+                        <button
+                          onClick={() => {
+                            const metrics = [...(node.data.metrics || [])];
+                            metrics.splice(idx, 1);
+                            onUpdate({ ...node, data: { ...node.data, metrics } });
+                          }}
+                          className="text-red-500"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {!isReadOnly && (
+                    <button
+                      onClick={() => {
+                        const metrics = [...(node.data.metrics || [])];
+                        metrics.push({ alias: '', op: 'count', field: '' });
+                        onUpdate({ ...node, data: { ...node.data, metrics } });
+                      }}
+                      className={`mt-1 px-2 py-1 text-xs rounded border border-dashed ${
                         theme === 'dark'
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300'
-                      } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                    />
-                  </div>
-                )}
+                          ? 'border-gray-600 text-gray-300'
+                          : 'border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      Add Metric
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Having
+                  </label>
+                  <input
+                    type="text"
+                    value={node.data.having || ''}
+                    readOnly={isReadOnly}
+                    onChange={(e) => onUpdate({ ...node, data: { ...node.data, having: e.target.value } })}
+                    placeholder="e.g., count > 10"
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Order By
+                  </label>
+                  {(node.data.orderBy || []).map((o, idx) => (
+                    <div key={idx} className="flex items-center gap-2 mb-1">
+                      <input
+                        type="text"
+                        value={o.field || ''}
+                        readOnly={isReadOnly}
+                        onChange={(e) => {
+                          const order = [...(node.data.orderBy || [])];
+                          order[idx] = { ...order[idx], field: e.target.value };
+                          onUpdate({ ...node, data: { ...node.data, orderBy: order } });
+                        }}
+                        className={`flex-1 px-2 py-1 rounded border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      />
+                      <select
+                        value={o.direction || 'asc'}
+                        disabled={isReadOnly}
+                        onChange={(e) => {
+                          const order = [...(node.data.orderBy || [])];
+                          order[idx] = { ...order[idx], direction: e.target.value };
+                          onUpdate({ ...node, data: { ...node.data, orderBy: order } });
+                        }}
+                        className={`px-2 py-1 rounded border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      >
+                        <option value="asc">asc</option>
+                        <option value="desc">desc</option>
+                      </select>
+                      {!isReadOnly && (
+                        <button
+                          onClick={() => {
+                            const order = [...(node.data.orderBy || [])];
+                            order.splice(idx, 1);
+                            onUpdate({ ...node, data: { ...node.data, orderBy: order } });
+                          }}
+                          className="text-red-500"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {!isReadOnly && (
+                    <button
+                      onClick={() => {
+                        const order = [...(node.data.orderBy || [])];
+                        order.push({ field: '', direction: 'asc' });
+                        onUpdate({ ...node, data: { ...node.data, orderBy: order } });
+                      }}
+                      className={`mt-1 px-2 py-1 text-xs rounded border border-dashed ${
+                        theme === 'dark'
+                          ? 'border-gray-600 text-gray-300'
+                          : 'border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      Add Order
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Limit
+                  </label>
+                  <input
+                    type="number"
+                    value={node.data.limit ?? ''}
+                    readOnly={isReadOnly}
+                    onChange={(e) => onUpdate({
+                      ...node,
+                      data: { ...node.data, limit: e.target.value ? Number(e.target.value) : undefined }
+                    })}
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+
+                <div className="mt-2">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Pivot Field (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={node.data.pivot || ''}
+                    readOnly={isReadOnly}
+                    onChange={(e) => onUpdate({ ...node, data: { ...node.data, pivot: e.target.value } })}
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+
+                <div className="mt-2 flex items-center">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={node.data.rollup || false}
+                    disabled={isReadOnly}
+                    onChange={(e) => onUpdate({
+                      ...node,
+                      data: { ...node.data, rollup: e.target.checked }
+                    })}
+                  />
+                  <label className={`text-sm ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Include grand total rollup
+                  </label>
+                </div>
             </>
             )}
 
@@ -5393,14 +5637,14 @@ const App = () => {
         tags: ['graphql', 'aggregation', 'multi-api'],
         applications: ['CRM'],
         inputSchema: { userId: {type: "string", required: true, description: "The ID of the user to fetch.", example: "user-123"} },
-        outputSchema: { userData: {type: "object", description: "Aggregated user data."} },
+        outputSchema: { grouped: {type: "array", description: "Grouped results."} },
         workflow: {
           nodes: [
             { id: 'start_1', type: 'start', position: { x: 50, y: 200 }, data: { label: 'Start', status: 'idle' } },
             { id: 'graphql_1', type: 'graphql', position: { x: 200, y: 200 }, data: { label: 'Fetch User Data', query: `query GetUser($id: ID!) { user(id: $id) { id name email profile { avatar bio } } }`, variables: { id: '{{userId}}' }, endpoint: 'https://api.example.com/graphql', status: 'idle' } },
             { id: 'api_2', type: 'api', position: { x: 400, y: 100 }, data: { label: 'Get Orders', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/orders/{{userId}}', status: 'idle' } },
             { id: 'api_3', type: 'api', position: { x: 400, y: 300 }, data: { label: 'Get Preferences', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/preferences/{{userId}}', status: 'idle' } },
-            { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Combine Data', aggregationType: 'merge', mergeStrategy: 'shallow', status: 'idle' } },
+            { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Group Users', target: 'data', groupBy: ['status'], metrics: [{ alias: 'count', op: 'count', field: '*' }], status: 'idle' } },
             { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'orders', to: 'userOrders' }] }, onError: 'continue' }, { op: 'select_fields', target: '', config: { fields: ['userOrders', 'preferences'] }, onError: 'continue' } ], status: 'idle' } },
             { id: 'end_1', type: 'end', position: { x: 1000, y: 200 }, data: { label: 'End', status: 'idle' } }
           ],
@@ -5434,7 +5678,7 @@ const App = () => {
                     { id: 'graphql_1', type: 'graphql', position: { x: 200, y: 200 }, data: { label: 'Fetch User Data', query: `query GetUser($id: ID!) { user(id: $id) { id name email profile { avatar bio } } }`, variables: { id: '{{userId}}' }, endpoint: 'https://api.example.com/graphql', status: 'idle' } },
                     { id: 'api_2', type: 'api', position: { x: 400, y: 100 }, data: { label: 'Get Orders', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/orders/{{userId}}', status: 'idle' } },
                     { id: 'api_3', type: 'api', position: { x: 400, y: 300 }, data: { label: 'Get Preferences', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/preferences/{{userId}}', status: 'idle' } },
-                    { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Combine Data', aggregationType: 'merge', mergeStrategy: 'shallow', status: 'idle' } },
+                    { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Group Users', target: 'data', groupBy: ['status'], metrics: [{ alias: 'count', op: 'count', field: '*' }], status: 'idle' } },
                     { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'orders', to: 'userOrders' }] }, onError: 'continue' }, { op: 'select_fields', target: '', config: { fields: ['userOrders', 'preferences'] }, onError: 'continue' } ], status: 'idle' } },
                     { id: 'end_1', type: 'end', position: { x: 1000, y: 200 }, data: { label: 'End', status: 'idle' } }
                   ],
@@ -5449,7 +5693,7 @@ const App = () => {
                   ]
                 },
                 inputSchema: { userId: {type: "string", required: true, description: "The ID of the user to fetch.", example: "user-123"} },
-                outputSchema: { userData: {type: "object", description: "Aggregated user data."} },
+                outputSchema: { grouped: {type: "array", description: "Grouped results."} },
              } , isCurrent: true},
         ],
         testSuites: [],
