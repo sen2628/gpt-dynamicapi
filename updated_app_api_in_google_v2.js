@@ -464,11 +464,17 @@ const transformConfigToUserFormat = (config) => {
                         config: {
                             groupBy: node.data.groupBy || [],
                             metrics: node.data.metrics || [],
-                            having: node.data.having || [],
-                            orderBy: node.data.orderBy || [],
-                            limit: node.data.limit,
-                            pivot: node.data.pivot,
-                            rollup: node.data.rollup || false
+                            ...(node.data.having
+                                ? { having: Array.isArray(node.data.having)
+                                    ? node.data.having
+                                    : [{ expression: node.data.having }] }
+                                : {}),
+                            ...(node.data.orderBy && node.data.orderBy.length
+                                ? { orderBy: node.data.orderBy }
+                                : {}),
+                            ...(node.data.limit != null ? { limit: node.data.limit } : {}),
+                            ...(node.data.pivot ? { pivot: node.data.pivot } : {}),
+                            ...(node.data.rollup ? { rollup: true } : {})
                         },
                         onError: node.data.onError || 'continue'
                     });
@@ -517,6 +523,32 @@ const transformConfigToUserFormat = (config) => {
         categoryName: "dynamicAPI",
         categoryId: id,
         categoryValues
+    };
+};
+
+// Generate an output schema for a group_by configuration
+const generateGroupByOutputSchema = (nodeData = {}) => {
+    const properties = {};
+
+    (nodeData.groupBy || []).forEach(field => {
+        properties[field] = { type: 'string', description: `Group key ${field}` };
+    });
+
+    (nodeData.metrics || []).forEach(metric => {
+        const alias = metric.alias || `${metric.op}_${metric.field}`;
+        properties[alias] = { type: 'number', description: `${metric.op} of ${metric.field}` };
+    });
+
+    if (nodeData.rollup) {
+        properties._isTotal = { type: 'boolean', description: 'Indicates grand total row' };
+    }
+
+    return {
+        grouped: {
+            type: 'array',
+            description: 'Grouped results',
+            items: { type: 'object', properties }
+        }
     };
 };
 
@@ -4176,13 +4208,20 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
                 const updatedNodes = (config.workflow?.nodes || []).map(n =>
                   n.id === updated.id ? updated : n
                 );
-                onUpdate({
+                let newConfig = {
                   ...config,
                   workflow: {
                     ...config.workflow,
                     nodes: updatedNodes
                   }
-                });
+                };
+                if (updated.type === 'aggregate') {
+                  newConfig = {
+                    ...newConfig,
+                    outputSchema: generateGroupByOutputSchema(updated.data)
+                  };
+                }
+                onUpdate(newConfig);
               }
             }}
             onClose={() => setSelectedNode(null)}
