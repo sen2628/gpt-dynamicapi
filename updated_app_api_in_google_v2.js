@@ -264,40 +264,77 @@ const HelpModal = ({ onClose, theme }) => (
         <section>
           <h3 className="font-medium mb-1">REST API</h3>
           <p>Invoke external HTTP endpoints using methods like GET or POST.</p>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Method: GET\nURL: https://api.example.com/resource`}</pre>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>method</code>: GET, POST, PUT, DELETE</li>
+            <li><code>headers</code>: HTTP headers object</li>
+            <li><code>query</code>: URL query parameters</li>
+            <li><code>body</code>: JSON payload for write operations</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`fetch('https://api.example.com/users?active=true', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ name: 'Ada' })\n})`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">GraphQL</h3>
           <p>Execute GraphQL queries or mutations against a GraphQL endpoint.</p>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Endpoint: https://api.example.com/graphql\nQuery: { items { id name } }`}</pre>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>endpoint</code>: GraphQL server URL</li>
+            <li><code>query</code>: query or mutation string</li>
+            <li><code>variables</code>: optional variables object</li>
+            <li><code>headers</code>: optional HTTP headers</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`fetch('https://api.example.com/graphql', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    query: '{ items { id name } }',\n    variables: { limit: 10 }\n  })\n})`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">Transform</h3>
           <p>Modify incoming data using operations like rename, flatten, nest or compute.</p>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>Rename: users.name → username</pre>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>rename</code>: change field name <code>from</code> → <code>to</code></li>
+            <li><code>flatten</code>/<code>nest</code>: convert between nested and dot paths</li>
+            <li><code>compute</code>: derive new field from expression</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: { user: { name: 'Ada', age: 30 } }\nTransform: rename user.name -> username, compute isAdult: age > 18\nOutput: { username: 'Ada', age: 30, isAdult: true }`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">Filter</h3>
           <p>Keep records where a field meets a condition.</p>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Field: price\nCondition: > 100`}</pre>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>field</code>: field to inspect</li>
+            <li><code>operator</code>: &gt;, &lt;, ==, etc.</li>
+            <li><code>value</code>: comparison target</li>
+            <li><code>logic</code>: AND/OR for multiple rules</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ price: 50 }, { price: 150 }]\nFilter: field=price operator='>' value=100\nResult: [{ price: 150 }]`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">Aggregate</h3>
           <p>Combine or summarize data such as merging objects or summing values.</p>
           <ul className="list-disc ml-6 mt-2">
-            <li>Merge Objects</li>
-            <li>Concatenate Arrays</li>
-            <li>Sum/Average/Count Field</li>
-            <li>Group By Field</li>
+            <li><code>merge</code>: combine objects</li>
+            <li><code>concat</code>: join arrays</li>
+            <li><code>sum/avg/count</code>: math on field values</li>
+            <li><code>groupBy</code>: bucket items by field</li>
           </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ cat: 'a', val: 1 }, { cat: 'a', val: 2 }]\nAggregate: groupBy=cat sum=val\nResult: { a: 3 }`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">Condition</h3>
           <p>Branch the workflow based on an expression.</p>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>user.age &gt; 18</pre>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>expression</code>: boolean logic to evaluate</li>
+            <li><code>trueStep</code>: step run when true</li>
+            <li><code>falseStep</code>: step run when false</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Condition: user.age > 18\nTrue -> call /adult\nFalse -> call /minor`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">API Specifications</h3>
+          <p>Browse available APIs with details:</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>id</code> &amp; <code>name</code>: identifiers</li>
+            <li><code>endpoint</code>: request URL</li>
+            <li><code>inputSchema</code> / <code>outputSchema</code>: JSON structures</li>
+            <li><code>code snippets</code>: ready-to-use calls</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Example: fetch('https://api.example.com/weather?q=London')`}</pre>
           {apiCatalog.restApis.map(api => (
             <div key={api.id} className="mt-2">
               <h4 className="font-medium">{api.name}</h4>
