@@ -315,14 +315,13 @@ const HelpModal = ({ onClose, theme }) => (
         </section>
         <section>
           <h3 className="font-medium mb-1">Filter</h3>
-          <p>Keep records where a field meets a condition.</p>
+          <p>Keep or drop records based on a where clause.</p>
           <ul className="list-disc ml-6 mt-2">
-            <li><code>field</code>: field to inspect</li>
-            <li><code>operator</code>: &gt;, &lt;, ==, etc.</li>
-            <li><code>value</code>: comparison target</li>
-            <li><code>logic</code>: AND/OR for multiple rules</li>
+            <li><code>mode</code>: keep or drop matching records</li>
+            <li><code>where</code>: expression or predicate tree</li>
+            <li><code>post_limit</code>: optional offset/limit after filtering</li>
           </ul>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ price: 50 }, { price: 150 }]\nFilter: field=price operator='>' value=100\nResult: [{ price: 150 }]`}</pre>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ price: 50 }, { price: 150 }]\nFilter: mode='keep' where=price > 100\nResult: [{ price: 150 }]`}</pre>
         </section>
         <section>
           <h3 className="font-medium mb-1">Aggregate</h3>
@@ -414,6 +413,27 @@ const ExecutionResultsPanel = ({ results, onClose, theme }) => {
 };
 
 // Helper function to transform internal config to user-specified JSON format
+const parseWhereInput = (input) => {
+    if (typeof input === 'object' && input !== null) return input;
+    if (!input || (typeof input === 'string' && input.trim() === '')) return null;
+    try {
+        return JSON.parse(input);
+    } catch {
+        return { expr: String(input).trim() };
+    }
+};
+
+const hasPredicate = (where) => {
+    if (!where) return false;
+    if (typeof where === 'string') return where.trim().length > 0;
+    if (where.expr && String(where.expr).trim() !== '') return true;
+    if (Array.isArray(where.predicates) && where.predicates.length > 0) return true;
+    if (where.path && where.op) return true;
+    const combinators = where.and || where.or;
+    if (Array.isArray(combinators)) return combinators.some(hasPredicate);
+    return false;
+};
+
 const transformConfigToUserFormat = (config) => {
     const { id, inputSchema, outputSchema, workflow, mockEnabled, mockResponse } = config;
 
@@ -444,18 +464,31 @@ const transformConfigToUserFormat = (config) => {
                     }
                     break;
 
-                case 'filter':
-                    transformations.push({
-                        op: 'filter',
-                        target: '',
-                        config: {
-                            rules: [
-                                { expression: node.data.filterCondition || 'condition not set' }
-                            ]
-                        },
-                        onError: node.data.onError || 'continue'
-                    });
+                case 'filter': {
+                    const where = parseWhereInput(node.data.where ?? node.data.whereInput);
+                    if (hasPredicate(where)) {
+                        transformations.push({
+                            op: 'filter',
+                            target: '',
+                            config: {
+                                mode: node.data.mode || 'keep',
+                                where
+                            },
+                            onError: node.data.onError || 'continue'
+                        });
+                        if (node.data.offset != null || node.data.limit != null) {
+                            transformations.push({
+                                op: 'post_limit',
+                                target: '',
+                                config: {
+                                    ...(node.data.offset != null ? { offset: node.data.offset } : {}),
+                                    ...(node.data.limit != null ? { limit: node.data.limit } : {})
+                                }
+                            });
+                        }
+                    }
                     break;
+                }
 
                 case 'aggregate':
                     transformations.push({
@@ -3561,7 +3594,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
     { type: 'api', label: 'REST API', icon: Globe, color: 'blue', description: 'Call REST endpoints' },
     { type: 'graphql', label: 'GraphQL', icon: Cpu, color: 'purple', description: 'Execute GraphQL queries' },
     { type: 'transform', label: 'Transform', icon: GitBranch, color: 'green', description: 'Transform data structure' },
-    { type: 'filter', label: 'Filter', icon: Filter, color: 'orange', description: 'Filter data based on conditions' },
+    { type: 'filter', label: 'Filter', icon: Filter, color: 'orange', description: 'Filter data using predicates' },
     { type: 'aggregate', label: 'Group By', icon: Database, color: 'red', description: 'Group data with metrics' },
     { type: 'condition', label: 'Condition', icon: Diamond, color: 'yellow', description: 'Conditional branching' }
   ];
@@ -3680,7 +3713,10 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
       position: { x: x - 90, y: y - 30 }, // Adjust for node half-width/height
       data: {
         label: nodeTypes.find(n => n.type === nodeType)?.label || nodeType,
-        status: 'idle'
+        status: 'idle',
+        ...(nodeType === 'filter'
+          ? { mode: 'keep', where: null, whereInput: '', offset: undefined, limit: undefined }
+          : {})
       }
     };
     
@@ -5165,48 +5201,110 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
           {/* Filter Configuration */}
           {node.type === 'filter' && (
             <div className="space-y-2">
-                <label className={`block text-sm font-medium mb-1 ${
+              <label className={`block text-sm font-medium mb-1 ${
                 theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                }`}>
-                Field
-                </label>
-                <input
-                type="text"
-                list={fieldOptionsId}
-                value={node.data.field || ''}
-                readOnly={isReadOnly}
-                onChange={(e) => onUpdate({
+              }`}>
+                Mode
+              </label>
+              <select
+                value={node.data.mode || 'keep'}
+                disabled={isReadOnly}
+                onChange={(e) =>
+                  onUpdate({
                     ...node,
-                    data: { ...node.data, field: e.target.value }
-                })}
+                    data: { ...node.data, mode: e.target.value }
+                  })
+                }
                 className={`w-full px-3 py-2 rounded-lg border ${
-                    theme === 'dark'
+                  theme === 'dark'
                     ? 'bg-gray-700 border-gray-600 text-white'
                     : 'bg-white border-gray-300'
                 } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                />
-                <label className={`block text-sm font-medium mb-1 ${
+              >
+                <option value="keep">keep</option>
+                <option value="drop">drop</option>
+              </select>
+
+              <label className={`block text-sm font-medium mb-1 ${
                 theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                }`}>
-                Condition
-                </label>
-                <input
-                type="text"
-                value={node.data.condition || ''}
+              }`}>
+                Where
+              </label>
+              <textarea
+                value={node.data.whereInput || ''}
                 readOnly={isReadOnly}
-                onChange={(e) => onUpdate({
+                onChange={(e) => {
+                  const text = e.target.value;
+                  const parsed = parseWhereInput(text);
+                  onUpdate({
                     ...node,
-                    data: { ...node.data, condition: e.target.value }
-                })}
-                placeholder="e.g., > 100"
+                    data: { ...node.data, where: parsed, whereInput: text }
+                  });
+                }}
+                placeholder="expr or predicate JSON"
                 className={`w-full px-3 py-2 rounded-lg border font-mono text-sm ${
-                    theme === 'dark'
+                  theme === 'dark'
                     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                     : 'bg-white border-gray-300'
                 } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                />
+              />
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Offset
+                  </label>
+                  <input
+                    type="number"
+                    value={node.data.offset ?? ''}
+                    readOnly={isReadOnly}
+                    onChange={(e) =>
+                      onUpdate({
+                        ...node,
+                        data: {
+                          ...node.data,
+                          offset: e.target.value === '' ? undefined : Number(e.target.value)
+                        }
+                      })
+                    }
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    Limit
+                  </label>
+                  <input
+                    type="number"
+                    value={node.data.limit ?? ''}
+                    readOnly={isReadOnly}
+                    onChange={(e) =>
+                      onUpdate({
+                        ...node,
+                        data: {
+                          ...node.data,
+                          limit: e.target.value === '' ? undefined : Number(e.target.value)
+                        }
+                      })
+                    }
+                    className={`w-full px-3 py-2 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
+                        : 'bg-white border-gray-300'
+                    } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                  />
+                </div>
+              </div>
             </div>
-            )}
+          )}
             
             {/* Group By Configuration */}
             {node.type === 'aggregate' && (
