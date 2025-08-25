@@ -29,5 +29,39 @@ assert.deepStrictEqual(noOverwrite, { a: 1 }, 'no overwrite should keep existing
 const yesOverwrite = unflatten(flatInput, { delimiter: '.', overwrite: true });
 assert.deepStrictEqual(yesOverwrite, { a: { b: 2 } }, 'overwrite should replace value');
 
+// Conditional branching
+const condDataTrue = { flag: true, nested: { foo: { bar: 1 } } };
+const condResultTrue = executeTransformation(condDataTrue, {
+  op: 'condition',
+  config: {
+    if: 'flag',
+    then: [
+      { op: 'unknown_op', onError: 'continue' },
+      { op: 'flatten', target: 'nested', config: {} }
+    ],
+    else: [{ op: 'unflatten', target: 'nested', config: { overwrite: true } }]
+  }
+});
+assert.deepStrictEqual(
+  condResultTrue,
+  { flag: true, nested: { 'foo.bar': 1 } },
+  'then branch should flatten nested object and skip invalid step'
+);
+
+const condDataFalse = { flag: false, nested: { 'foo.bar': 1 } };
+const condResultFalse = executeTransformation(condDataFalse, {
+  op: 'condition',
+  config: {
+    if: 'flag',
+    then: [{ op: 'flatten', target: 'nested', config: {} }],
+    else: [{ op: 'unflatten', target: 'nested', config: { overwrite: true } }]
+  }
+});
+assert.deepStrictEqual(
+  condResultFalse,
+  { flag: false, nested: { foo: { bar: 1 } } },
+  'else branch should unflatten nested object'
+);
+
 console.log('All runtime tests passed');
 
