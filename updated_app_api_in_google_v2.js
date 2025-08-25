@@ -231,6 +231,26 @@ const Skeleton = ({ className = '', variant = 'text' }) => {
   return <div className={`${baseClass} ${className}`}></div>;
 };
 
+const StyledSelect = ({ theme, className = '', children, ...props }) => (
+  <div className="relative inline-block">
+    <select
+      {...props}
+      className={`appearance-none pr-8 pl-3 py-2 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        theme === 'dark'
+          ? 'bg-gray-800 border-gray-700 text-white'
+          : 'bg-white border-gray-300 text-gray-700'
+      } ${className}`}
+    >
+      {children}
+    </select>
+    <ChevronDown
+      className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+      }`}
+    />
+  </div>
+);
+
 const HelpModal = ({ onClose, theme }) => (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div className={`max-w-3xl w-full max-h-[80vh] overflow-y-auto rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}>
@@ -854,16 +874,16 @@ const SubscriberDashboard = ({ theme }) => {
     const KpiCard = ({ icon, label, value, unit, iconBgColor }) => {
         const Icon = icon;
         return (
-            <div className={`rounded-lg p-6 shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className={`rounded-lg p-4 shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
-                        <p className={`text-2xl font-bold mt-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {value.toLocaleString()}<span className="text-lg ml-1">{unit}</span>
+                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
+                        <p className={`text-xl font-bold mt-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            {value.toLocaleString()}<span className="text-base ml-1">{unit}</span>
                         </p>
                     </div>
-                    <div className={`p-3 rounded-full ${iconBgColor}`}>
-                      <Icon className="w-6 h-6 text-white" />
+                    <div className={`p-2 rounded-full ${iconBgColor}`}>
+                      <Icon className="w-5 h-5 text-white" />
                     </div>
                 </div>
             </div>
@@ -993,16 +1013,16 @@ const SubscriberDashboard = ({ theme }) => {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                         <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>API Call Metrics</h3>
                         <div className="flex items-center gap-2">
-                            <select
+                            <StyledSelect
+                                theme={theme}
                                 value={selectedApi}
                                 onChange={(e) => setSelectedApi(e.target.value)}
-                                className={`text-sm px-3 py-1.5 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}
                             >
                                 <option value="all">All API Configs</option>
                                 {apiConfigs.map(api => (
                                     <option key={api.id} value={api.id}>{api.name}</option>
                                 ))}
-                            </select>
+                            </StyledSelect>
                             <div className={`flex items-center p-1 rounded-lg ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
                                 {['1d', '7d', '30d'].map(tf => (
                                     <button
@@ -2494,6 +2514,8 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   const [totalPublished, setTotalPublished] = useState(
     configs.filter(c => c.status === 'published').length
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -2514,6 +2536,10 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
     };
     fetchStats();
   }, [configs]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, sortBy, configs]);
 
   const handleDeleteClick = (e, config) => {
     e.stopPropagation();
@@ -2572,6 +2598,16 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
     return filtered;
   }, [configs, filter, sortBy]);
 
+  const totalPages = Math.ceil(filteredConfigs.length / itemsPerPage) || 1;
+  const paginatedConfigs = useMemo(
+    () =>
+      filteredConfigs.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+      ),
+    [filteredConfigs, currentPage]
+  );
+
 
   // Builder Dashboard
   return (
@@ -2580,50 +2616,38 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <select
+            <StyledSelect
+              theme={theme}
               value={environment}
               onChange={(e) => onEnvironmentChange(e.target.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                  theme === 'dark'
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-white border-gray-200'
-              } border focus:ring-2 focus:ring-blue-500`}
             >
               <option value="dev">Development</option>
               <option value="qa">QA</option>
               <option value="uat">UAT</option>
               <option value="prod">PROD</option>
-            </select>
+            </StyledSelect>
           </div>
           {/* Filter */}
-          <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className={`px-4 py-2 rounded-lg border ${
-              theme === 'dark'
-                  ? 'bg-gray-800 border-gray-700 text-white' 
-                  : 'bg-white border-gray-200'
-              } focus:ring-2 focus:ring-blue-500`}
+          <StyledSelect
+            theme={theme}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
           >
               <option value="all">All Status</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
-          </select>
+          </StyledSelect>
           
           {/* Sort */}
-          <select
+          <StyledSelect
+            theme={theme}
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className={`px-4 py-2 rounded-lg border ${
-              theme === 'dark' 
-                ? 'bg-gray-800 border-gray-700 text-white' 
-                : 'bg-white border-gray-200'
-            } focus:ring-2 focus:ring-blue-500`}
           >
             <option value="modified">Last Modified</option>
             <option value="name">Name</option>
             <option value="status">Status</option>
-          </select>
+          </StyledSelect>
           {/* Config statistics */}
           <div className="flex gap-6 items-center">
             <div
@@ -2687,22 +2711,22 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
 
       {/* API Grid/List */}
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredConfigs.map(config => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paginatedConfigs.map(config => (
             <div
               key={config.id}
               onClick={() => onSelectConfig(config, 'view')}
-              className={`relative group flex flex-col rounded-2xl overflow-hidden p-6 transition-transform cursor-pointer ${
+              className={`relative group flex flex-col rounded-xl overflow-hidden p-4 transition-transform cursor-pointer ${
                 theme === 'dark'
-                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:shadow-2xl hover:-translate-y-1'
-                  : 'bg-gradient-to-br from-white to-gray-50 border border-gray-200 hover:shadow-2xl hover:-translate-y-1'
+                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:shadow-xl hover:-translate-y-1'
+                  : 'bg-gradient-to-br from-white to-gray-50 border border-gray-200 hover:shadow-xl hover:-translate-y-1'
               }`}
             >
               <div className="absolute inset-0 pointer-events-none">
                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 opacity-20 rounded-full blur-2xl"></div>
               </div>
               <div className="flex-1">
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start justify-between mb-3">
                   <h3 className={`font-semibold pr-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     {config.name}
                   </h3>
@@ -2715,7 +2739,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                   </span>
                 </div>
                 
-                <p className={`text-sm mb-4 line-clamp-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                <p className={`text-sm mb-3 line-clamp-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   {config.description || 'No description provided'}
                 </p>
 
@@ -2732,7 +2756,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                 </div>
               </div>
               
-              <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className={`mt-3 pt-3 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
                  <span className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>v{config.versions.find(v => v.isCurrent)?.version}</span>
                    <div className="flex items-center gap-1">
                       <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
@@ -2767,27 +2791,27 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
           )}
         </div>
       ) : (
-        <div className={`rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <table className="w-full">
-            <thead className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+        <div className={`rounded-lg border overflow-hidden ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <table className="min-w-full text-sm">
+            <thead className={`${theme === 'dark' ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
               <tr>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Name</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Status</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Version</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Applications</th>
-                <th className={`text-right px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Actions</th>
+                <th className="text-left px-6 py-3 font-medium">Name</th>
+                <th className="text-left px-6 py-3 font-medium">Status</th>
+                <th className="text-left px-6 py-3 font-medium">Version</th>
+                <th className="text-left px-6 py-3 font-medium">Applications</th>
+                <th className="text-right px-6 py-3 font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {filteredConfigs.map((config, index) => (
-                <tr 
+            <tbody className={`${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'} divide-y`}>
+              {paginatedConfigs.map((config) => (
+                <tr
                   key={config.id}
                   onClick={() => onSelectConfig(config, 'view')}
                   className={`transition-colors cursor-pointer ${
-                    theme === 'dark' 
-                      ? 'hover:bg-gray-700/50 border-gray-700' 
-                      : 'hover:bg-gray-50 border-gray-200'
-                  } ${index < filteredConfigs.length - 1 ? 'border-b' : ''}`}
+                    theme === 'dark'
+                      ? 'hover:bg-gray-700/50'
+                      : 'hover:bg-gray-50'
+                  }`}
                 >
                   <td className={`px-6 py-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     <div>
@@ -2834,21 +2858,53 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
               ))}
             </tbody>
           </table>
-          
+
           {filteredConfigs.length === 0 && (
             <div className={`text-center py-12 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
               <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
               <p className="text-lg mb-2">No API configurations found</p>
               <p className="text-sm">
-                {searchTerm || filter !== 'all' 
-                  ? 'Try adjusting your filters' 
+                {searchTerm || filter !== 'all'
+                  ? 'Try adjusting your filters'
                   : 'Create your first API to get started'}
               </p>
             </div>
           )}
         </div>
       )}
-      
+
+      {filteredConfigs.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+            Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-1 rounded-md border text-sm transition-colors ${
+                theme === 'dark'
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-1 rounded-md border text-sm transition-colors ${
+                theme === 'dark'
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3173,7 +3229,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <button
               onClick={() => setShowJsonEditor(!showJsonEditor)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
@@ -3188,27 +3244,6 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
             >
               <Braces className="w-4 h-4" />
               JSON View
-            </button>
-
-            <button
-              onClick={() => setShowApiSpec(true)}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
-                theme === 'dark'
-                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <FileCode className="w-4 h-4" />
-              API Spec
-            </button>
-
-            <button
-              onClick={onShowHelp}
-              className={`p-2 rounded-lg transition-colors ${
-                theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
-              }`}
-            >
-              <HelpCircle className="w-5 h-5" />
             </button>
 
             {permissions.allowEdit && (
@@ -3231,108 +3266,128 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               </button>
             )}
 
-              <div className="relative">
-                <button
-                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
-                    theme === 'dark'
-                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                  } ${
-                    viewingVersion && viewingVersion.id !== currentVersion?.id
-                      ? theme === 'dark'
-                        ? 'bg-yellow-900 border-yellow-700 text-yellow-300'
-                        : 'bg-yellow-100 border-yellow-300 text-yellow-800'
-                      : ''
-                  }`}
-                >
-                  <FileStack className="w-4 h-4" />
-                  {viewingVersion ? `v${viewingVersion.version}` : 'Versions'}
-                </button>
-                {showVersionDropdown && (
-                  <VersionDropdown
-                    config={config}
-                    theme={theme}
-                    onClose={() => setShowVersionDropdown(false)}
-                    onSelectVersion={setViewingVersion}
-                    viewingVersion={viewingVersion}
-                    onCloneVersion={(version) => { setShowVersionDropdown(false); setCloningVersion(version); }}
-                    onMakeActive={(versionId) => { setShowVersionDropdown(false); onMakeVersionActive(versionId); }}
-                    environment={environment}
-                  />
-                )}
-              </div>
-              {viewingVersion && (
-                <span
-                  className={`text-xs px-2 py-0.5 rounded border ${
-                    viewingVersion.id === currentVersion?.id
-                      ? theme === 'dark'
-                        ? 'border-green-700 text-green-300'
-                        : 'border-green-300 text-green-700'
-                      : theme === 'dark'
-                        ? 'border-yellow-700 text-yellow-300'
-                        : 'border-yellow-300 text-yellow-800'
-                  }`}
-                >
-                  Viewing v{viewingVersion.version}
-                  {viewingVersion.id === currentVersion?.id ? '' : ' (not active)'}
-                </span>
+            <div className="relative">
+              <button
+                onClick={() => setShowVersionDropdown(!showVersionDropdown)}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                  theme === 'dark'
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                } ${
+                  viewingVersion && viewingVersion.id !== currentVersion?.id
+                    ? theme === 'dark'
+                      ? 'bg-yellow-900 border-yellow-700 text-yellow-300'
+                      : 'bg-yellow-100 border-yellow-300 text-yellow-800'
+                    : ''
+                }`}
+              >
+                <FileStack className="w-4 h-4" />
+                {viewingVersion ? `v${viewingVersion.version}` : 'Versions'}
+              </button>
+              {showVersionDropdown && (
+                <VersionDropdown
+                  config={config}
+                  theme={theme}
+                  onClose={() => setShowVersionDropdown(false)}
+                  onSelectVersion={setViewingVersion}
+                  viewingVersion={viewingVersion}
+                  onCloneVersion={(version) => { setShowVersionDropdown(false); setCloningVersion(version); }}
+                  onMakeActive={(versionId) => { setShowVersionDropdown(false); onMakeVersionActive(versionId); }}
+                  environment={environment}
+                />
+              )}
+            </div>
+            {viewingVersion && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded border ${
+                  viewingVersion.id === currentVersion?.id
+                    ? theme === 'dark'
+                      ? 'border-green-700 text-green-300'
+                      : 'border-green-300 text-green-700'
+                    : theme === 'dark'
+                      ? 'border-yellow-700 text-yellow-300'
+                      : 'border-yellow-300 text-yellow-800'
+                }`}
+              >
+                Viewing v{viewingVersion.version}
+                {viewingVersion.id === currentVersion?.id ? '' : ' (not active)'}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2 ml-auto">
+              {permissions.allowEdit ? (
+                <>
+                  <button
+                    onClick={handleExecuteWorkflow}
+                    disabled={isExecuting}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    Execute
+                  </button>
+
+                  {!isReadOnly && (
+                    <button
+                      onClick={handleSave}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      Save
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handlePublishToggle}
+                    title={config.status === 'published' ? 'Unpublish to make changes' : 'Publish API'}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      config.status === 'published'
+                        ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                        : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
+                    }`}
+                  >
+                    {config.status === 'published' ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
+                    {config.status === 'published' ? 'Unpublish' : 'Publish'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowPromoteModal(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <GitMerge className="w-4 h-4" />
+                    Promote
+                  </button>
+                  {config.environments[environment]?.promotedVersionId && (
+                    <button
+                      onClick={handleDepromote}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-orange-600 hover:bg-orange-700 text-white"
+                    >
+                      <GitBranch className="w-4 h-4" />
+                      Depromote
+                    </button>
+                  )}
+                </>
               )}
 
-            {permissions.allowEdit ? (
-                <>
-                    <button
-                        onClick={handleExecuteWorkflow}
-                        disabled={isExecuting}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                    >
-                        {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                        Execute
-                    </button>
+              <button
+                onClick={() => setShowApiSpec(true)}
+                className={`p-2 rounded-lg transition-colors ${
+                  theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <FileCode className="w-5 h-5" />
+              </button>
 
-                    {!isReadOnly && (
-                        <button
-                            onClick={handleSave}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                        >
-                            <Save className="w-4 h-4" />
-                            Save
-                        </button>
-                    )}
-
-                    <button
-                        onClick={handlePublishToggle}
-                        title={config.status === 'published' ? "Unpublish to make changes" : "Publish API"}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                            config.status === 'published'
-                            ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                            : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
-                        }`}
-                    >
-                        {config.status === 'published' ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
-                        {config.status === 'published' ? 'Unpublish' : 'Publish'}
-                    </button>
-                </>
-            ) : (
-                <>
-                    <button
-                        onClick={() => setShowPromoteModal(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                        <GitMerge className="w-4 h-4" />
-                        Promote
-                    </button>
-                    {config.environments[environment]?.promotedVersionId && (
-                        <button
-                            onClick={handleDepromote}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-orange-600 hover:bg-orange-700 text-white"
-                        >
-                            <GitBranch className="w-4 h-4" />
-                            Depromote
-                        </button>
-                    )}
-                </>
-            )}
+              <button
+                onClick={onShowHelp}
+                className={`p-2 rounded-lg transition-colors ${
+                  theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
