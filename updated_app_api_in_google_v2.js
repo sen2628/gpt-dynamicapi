@@ -32,6 +32,7 @@ import logoLight from './app-integrator-logo-light.svg';
 import logoDark from './app-integrator-logo-dark.svg';
 import apiCatalog from './api-catalog.json';
 import filterUtils from './filter-utils.js';
+import PathPicker from './PathPicker';
 
 const { parseWhereInput } = filterUtils;
 
@@ -48,26 +49,38 @@ const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
 const TRANSFORM_OPS = {
   rename_fields: {
     label: 'Rename Fields',
+    expectedType: 'object',
+    allowCreate: true,
     defaultConfig: { mappings: [{ from: '', to: '' }] }
   },
   select_fields: {
     label: 'Select Fields',
+    expectedType: 'object',
+    allowCreate: true,
     defaultConfig: { fields: [''] }
   },
   compute_field: {
     label: 'Compute Field',
+    expectedType: null,
+    allowCreate: true,
     defaultConfig: { field: '', expression: '' }
   },
   array_take: {
     label: 'Array Take',
+    expectedType: 'array',
+    allowCreate: false,
     defaultConfig: { count: 1 }
   },
   flatten: {
     label: 'Flatten',
+    expectedType: 'object',
+    allowCreate: true,
     defaultConfig: { delimiter: '.', depth: 0, preserveArrays: false }
   },
   unflatten: {
     label: 'Unflatten',
+    expectedType: 'object',
+    allowCreate: true,
     defaultConfig: { delimiter: '.', overwrite: false }
   }
 };
@@ -4710,6 +4723,8 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       id: `transform_${Date.now()}`,
       op,
       target: '',
+      expectedType: def.expectedType,
+      allowCreate: def.allowCreate !== undefined ? def.allowCreate : true,
       config: JSON.parse(JSON.stringify(def.defaultConfig)),
       onError: 'continue'
     };
@@ -4732,6 +4747,8 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       const newT = { ...t };
       if (updates.target !== undefined) newT.target = updates.target;
       if (updates.onError !== undefined) newT.onError = updates.onError;
+      if (updates.expectedType !== undefined) newT.expectedType = updates.expectedType;
+      if (updates.allowCreate !== undefined) newT.allowCreate = updates.allowCreate;
       if (updates.config) {
         const clean = {};
         Object.entries(updates.config).forEach(([k, v]) => {
@@ -5157,13 +5174,13 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     </div>
 
                     <div className="space-y-2">
-                      <input
-                        type="text"
-                        list={fieldOptionsId}
-                        placeholder="Target path"
+                      <PathPicker
+                        schema={getSourceSchemaForTransform()}
                         value={transform.target || ''}
-                        readOnly={isReadOnly}
-                        onChange={(e) => updateTransformation(transform.id, { target: e.target.value })}
+                        onChange={(val) => updateTransformation(transform.id, { target: val })}
+                        expectedType={transform.expectedType}
+                        allowCreate={transform.allowCreate}
+                        disabled={isReadOnly}
                         className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                       />
 
