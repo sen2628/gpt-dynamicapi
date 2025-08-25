@@ -70,7 +70,25 @@ function setByPath(obj, path, value) {
   return obj;
 }
 
+function runSteps(data, steps = []) {
+  let working = JSON.parse(JSON.stringify(data || {}));
+  for (const step of steps) {
+    try {
+      working = executeTransformation(working, step);
+    } catch (err) {
+      if ((step.onError || 'continue') === 'continue') {
+        continue;
+      }
+      throw err;
+    }
+  }
+  return working;
+}
+
 function executeTransformation(data, t) {
+  if (Array.isArray(t)) {
+    return runSteps(data, t);
+  }
   const { op, target = '', config = {} } = t || {};
   let working = JSON.parse(JSON.stringify(data || {}));
   switch (op) {
@@ -86,11 +104,21 @@ function executeTransformation(data, t) {
       working = target ? setByPath(working, target, nested) : nested;
       break;
     }
-    default:
+    case 'condition': {
+      const condVal = typeof config.if === 'string'
+        ? getByPath(working, config.if)
+        : config.if;
+      const branch = condVal ? config.then : config.else;
+      if (Array.isArray(branch)) {
+        working = runSteps(working, branch);
+      }
       break;
+    }
+    default:
+      throw new Error(`Unsupported op: ${op}`);
   }
   return working;
 }
 
-module.exports = { flatten, unflatten, executeTransformation };
+module.exports = { flatten, unflatten, executeTransformation, runSteps };
 
