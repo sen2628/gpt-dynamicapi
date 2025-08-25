@@ -3187,6 +3187,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const dragStartPos = useRef(null);
   const canvasRef = useRef(null);
   
   const nodeTypes = [
@@ -3240,16 +3241,53 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
 
   const handleBeautify = () => {
     if (!config.workflow?.nodes) return;
+
+    const nodes = config.workflow.nodes;
+    const edges = config.workflow.edges || [];
+
     const spacingX = 220;
     const spacingY = 120;
-    const nodes = config.workflow.nodes.map((n, idx) => ({
-      ...n,
-      position: {
-        x: (idx % 4) * spacingX,
-        y: Math.floor(idx / 4) * spacingY
-      }
-    }));
-    onUpdate({ ...config, workflow: { ...config.workflow, nodes } });
+
+    const adjacency = {};
+    edges.forEach(e => {
+      adjacency[e.source] = adjacency[e.source] || [];
+      adjacency[e.source].push(e.target);
+    });
+
+    const startNode = nodes.find(n => n.type === 'start') || nodes[0];
+    const levels = {};
+    const queue = [startNode.id];
+    levels[startNode.id] = 0;
+    while (queue.length) {
+      const id = queue.shift();
+      (adjacency[id] || []).forEach(t => {
+        if (levels[t] == null) {
+          levels[t] = levels[id] + 1;
+          queue.push(t);
+        }
+      });
+    }
+
+    const grouped = {};
+    nodes.forEach(n => {
+      const lvl = levels[n.id] ?? 0;
+      grouped[lvl] = grouped[lvl] || [];
+      grouped[lvl].push(n);
+    });
+
+    const positioned = nodes.map(n => {
+      const lvl = levels[n.id] ?? 0;
+      const idx = grouped[lvl].indexOf(n);
+      return {
+        ...n,
+        position: {
+          x: lvl * spacingX,
+          y: idx * spacingY
+        }
+      };
+    });
+
+    onUpdate({ ...config, workflow: { ...config.workflow, nodes: positioned } });
     setTimeout(() => handleFitToScreen(), 0);
   };
   
@@ -3648,13 +3686,20 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
                       }}
                       onMouseDown={(e) => {
                         if (!e.target.closest('.node-action') && !isReadOnly) {
-                          setSelectedNode(node);
+                          dragStartPos.current = { x: e.clientX, y: e.clientY };
                           handleNodeDragStart(node.id, e);
                         }
                       }}
                       onMouseUp={(e) => {
                         if (connectingFrom && connectingFrom.nodeId !== node.id) {
                             handleNodeConnect(connectingFrom.nodeId, node.id);
+                        }
+                        if (!isReadOnly && dragStartPos.current) {
+                          const dx = Math.abs(e.clientX - dragStartPos.current.x);
+                          const dy = Math.abs(e.clientY - dragStartPos.current.y);
+                          if (dx < 5 && dy < 5) {
+                            setSelectedNode(node);
+                          }
                         }
                       }}
                     >
@@ -3834,6 +3879,30 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
   const [schemaMode, setSchemaMode] = useState('form');
   const [localSchema, setLocalSchema] = useState({});
   const [schemaJson, setSchemaJson] = useState('{}');
+  const [panelWidth, setPanelWidth] = useState(448);
+  const resizingRef = useRef(false);
+
+  const startResize = (e) => {
+    resizingRef.current = true;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!resizingRef.current) return;
+      const newWidth = Math.min(Math.max(300, window.innerWidth - e.clientX), 800);
+      setPanelWidth(newWidth);
+    };
+    const stopResize = () => {
+      resizingRef.current = false;
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', stopResize);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', stopResize);
+    };
+  }, []);
 
   useEffect(() => {
     const nested = nestSchema(config.inputSchema || {});
@@ -3912,7 +3981,13 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       updateSchema(schema => {
         const parent = pathArr.reduce((acc, key) => {
           if (!key) return acc;
-          if (key === 'items') return acc.items.fields;
+          if (key === 'items') {
+            acc.items = acc.items || { type: 'object', fields: {} };
+            acc.items.fields = acc.items.fields || {};
+            return acc.items.fields;
+          }
+          acc[key] = acc[key] || { type: 'object', fields: {} };
+          acc[key].fields = acc[key].fields || {};
           return acc[key].fields;
         }, schema);
         let idx = 1;
@@ -4000,9 +4075,22 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       })
     );
 
+    const ensureObjectFields = (schema) => {
+      Object.values(schema).forEach(field => {
+        if (field.type === 'object') {
+          field.fields = field.fields || {};
+          ensureObjectFields(field.fields);
+        } else if (field.type === 'array' && field.items?.type === 'object') {
+          field.items.fields = field.items.fields || {};
+          ensureObjectFields(field.items.fields);
+        }
+      });
+    };
+
     const applyJson = () => {
       try {
         const parsed = JSON.parse(schemaJson || '{}');
+        ensureObjectFields(parsed);
         setLocalSchema(parsed);
         onUpdate(flattenSchema(parsed));
       } catch (e) {
@@ -4011,9 +4099,16 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     };
 
     return (
-      <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
-        theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-      } overflow-y-auto`}>
+      <div
+        className={`fixed top-0 right-0 h-full border-l ${
+          theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        } overflow-y-auto`}
+        style={{ width: panelWidth }}
+      >
+        <div
+          className="absolute left-0 top-0 h-full w-1 cursor-ew-resize"
+          onMouseDown={startResize}
+        />
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Input Structure</h3>
@@ -4209,9 +4304,16 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
   };
   
     return (
-      <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
-        theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-      } overflow-y-auto`}>
+      <div
+        className={`fixed top-0 right-0 h-full border-l ${
+          theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        } overflow-y-auto`}
+        style={{ width: panelWidth }}
+      >
+      <div
+        className="absolute left-0 top-0 h-full w-1 cursor-ew-resize"
+        onMouseDown={startResize}
+      />
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
