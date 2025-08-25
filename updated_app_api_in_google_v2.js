@@ -41,6 +41,68 @@ const ENV_SETTINGS = Object.fromEntries(
 
 const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
 
+// Utilities to convert between flat and nested representations
+const nestSchema = (flat = {}) => {
+  const nested = {};
+  Object.entries(flat).forEach(([path, schema]) => {
+    const parts = path.split('.');
+    let current = nested;
+    parts.forEach((part, idx) => {
+      if (idx === parts.length - 1) {
+        current[part] = { ...schema };
+      } else {
+        current[part] = current[part] || { type: 'object', fields: {} };
+        current = current[part].fields;
+      }
+    });
+  });
+  return nested;
+};
+
+const flattenSchema = (nested = {}, prefix = '') => {
+  let flat = {};
+  Object.entries(nested).forEach(([key, schema]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (schema.type === 'object' && schema.fields) {
+      flat = { ...flat, ...flattenSchema(schema.fields, path) };
+    } else {
+      const { fields, ...rest } = schema;
+      flat[path] = rest;
+    }
+  });
+  return flat;
+};
+
+const nestValues = (flat = {}) => {
+  const nested = {};
+  Object.entries(flat).forEach(([path, value]) => {
+    const parts = path.split('.');
+    let current = nested;
+    parts.forEach((part, idx) => {
+      if (idx === parts.length - 1) {
+        current[part] = value;
+      } else {
+        current[part] = current[part] || {};
+        current = current[part];
+      }
+    });
+  });
+  return nested;
+};
+
+const flattenValues = (nested = {}, prefix = '') => {
+  let flat = {};
+  Object.entries(nested).forEach(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      flat = { ...flat, ...flattenValues(value, path) };
+    } else {
+      flat[path] = value;
+    }
+  });
+  return flat;
+};
+
 // --- NEW: Schema Mapper Component ---
 const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, theme }) => {
     const [draggedField, setDraggedField] = useState(null);
@@ -1752,6 +1814,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const [inputMode, setInputMode] = useState('form');
     const [jsonInput, setJsonInput] = useState('{}');
     const [executionSteps, setExecutionSteps] = useState([]);
+    const nestedInputSchema = useMemo(() => nestSchema(config.inputSchema || {}), [config.inputSchema]);
 
     useEffect(() => {
         // Initialize input fields with example values from schema
@@ -1762,17 +1825,17 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
             });
         }
         setInputValues(initialInputs);
-        setJsonInput(JSON.stringify(initialInputs, null, 2));
+        setJsonInput(JSON.stringify(nestValues(initialInputs), null, 2));
     }, [config.inputSchema]);
 
     const switchToJson = () => {
-        setJsonInput(JSON.stringify(inputValues, null, 2));
+        setJsonInput(JSON.stringify(nestValues(inputValues), null, 2));
         setInputMode('json');
     };
 
     const switchToForm = () => {
         try {
-            setInputValues(JSON.parse(jsonInput || '{}'));
+            setInputValues(flattenValues(JSON.parse(jsonInput || '{}')));
             setInputMode('form');
         } catch (e) {
             showToast('Invalid JSON', 'error');
@@ -1788,7 +1851,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
         setApiResponse(null);
         setExecutionSteps([]);
 
-        let payload = inputValues;
+        let payload = inputMode === 'json' ? null : nestValues(inputValues);
         if (inputMode === 'json') {
             try {
                 payload = JSON.parse(jsonInput || '{}');
@@ -1853,23 +1916,55 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const generateCodeSnippet = useCallback((language) => {
         const baseUrl = `${INTEGRATOR_BASE_URL}/${config.name}`;
         const headers = { 'Authorization': 'Bearer YOUR_API_KEY', 'Content-Type': 'application/json' };
-        const body = JSON.stringify(inputValues, null, 2);
+        let values;
+        try {
+            values = inputMode === 'json' ? JSON.parse(jsonInput || '{}') : nestValues(inputValues);
+        } catch {
+            values = {};
+        }
+        const body = JSON.stringify(values, null, 2);
 
         switch (language) {
             case 'shell':
-                return `curl -X POST '${baseUrl}' \\\n-H 'Authorization: Bearer YOUR_API_KEY' \\\n-H 'Content-Type: application/json' \\\n-d '${JSON.stringify(inputValues)}'`;
+                return `curl -X POST '${baseUrl}' \\\n-H 'Authorization: Bearer YOUR_API_KEY' \\\n-H 'Content-Type: application/json' \\\n-d '${JSON.stringify(values)}'`;
             case 'javascript':
                 return `fetch('${baseUrl}', {\n  method: 'POST',\n  headers: ${JSON.stringify(headers, null, 2)},\n  body: ${body}\n})\n.then(response => response.json())\n.then(data => console.log(data))\n.catch(error => console.error('Error:', error));`;
             case 'typescript':
                 return `import fetch from 'node-fetch';\n\nconst url: string = '${baseUrl}';\n\nconst options: RequestInit = {\n  method: 'POST',\n  headers: {\n    'Authorization': 'Bearer YOUR_API_KEY',\n    'Content-Type': 'application/json'\n  },\n  body: ${body}\n};\n\nasync function callApi() {\n  try {\n    const response = await fetch(url, options);\n    const data = await response.json();\n    console.log(data);\n  } catch (error) {\n    console.error('Error:', error);\n  }\n}\n\ncallApi();`;
             case 'python':
-                return `import requests\nimport json\n\nurl = "${baseUrl}"\nheaders = ${JSON.stringify(headers, null, 2)}\npayload = ${JSON.stringify(inputValues)}\n\nresponse = requests.post(url, headers=headers, data=json.dumps(payload))\n\nprint(response.json())`;
+                return `import requests\nimport json\n\nurl = "${baseUrl}"\nheaders = ${JSON.stringify(headers, null, 2)}\npayload = ${JSON.stringify(values)}\n\nresponse = requests.post(url, headers=headers, data=json.dumps(payload))\n\nprint(response.json())`;
             case 'java':
-                 return `import java.net.URI;\nimport java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\n\npublic class ApiClient {\n    public static void main(String[] args) throws Exception {\n        HttpClient client = HttpClient.newHttpClient();\n        String requestBody = """\n${JSON.stringify(inputValues, null, 4)}\n""";\n\n        HttpRequest request = HttpRequest.newBuilder()\n                .uri(URI.create("${baseUrl}"))\n                .header("Authorization", "Bearer YOUR_API_KEY")\n                .header("Content-Type", "application/json")\n                .POST(HttpRequest.BodyPublishers.ofString(requestBody))\n                .build();\n\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}`;
+                 return `import java.net.URI;\nimport java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\n\npublic class ApiClient {\n    public static void main(String[] args) throws Exception {\n        HttpClient client = HttpClient.newHttpClient();\n        String requestBody = """\n${JSON.stringify(values, null, 4)}\n""";\n\n        HttpRequest request = HttpRequest.newBuilder()\n                .uri(URI.create("${baseUrl}"))\n                .header("Authorization", "Bearer YOUR_API_KEY")\n                .header("Content-Type", "application/json")\n                .POST(HttpRequest.BodyPublishers.ofString(requestBody))\n                .build();\n\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}`;
             default:
                 return '';
         }
-    }, [inputValues, config.id]);
+    }, [inputValues, jsonInput, inputMode, config.id]);
+
+    const renderInputFields = (schema, parentPath = '') => {
+        return Object.entries(schema).map(([key, value]) => {
+            const path = parentPath ? `${parentPath}.${key}` : key;
+            if (value.type === 'object' && value.fields) {
+                return (
+                    <div key={path} className="pl-4">
+                        <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
+                        {renderInputFields(value.fields, path)}
+                    </div>
+                );
+            }
+            return (
+                <div key={path} className="mb-2" style={{ marginLeft: parentPath ? '1rem' : 0 }}>
+                    <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
+                    <input
+                        type="text"
+                        value={inputValues[path] || ''}
+                        placeholder={value.example || ''}
+                        onChange={(e) => handleInputChange(path, e.target.value)}
+                        className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                    />
+                </div>
+            );
+        });
+    };
 
     const renderSchemaTable = (schema) => (
         <div className="overflow-x-auto">
@@ -1948,18 +2043,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                                     </div>
                                 </div>
                                 {inputMode === 'form' ? (
-                                    config.inputSchema && Object.entries(config.inputSchema).map(([key, schema]) => (
-                                        <div key={key}>
-                                            <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
-                                            <input
-                                                type="text"
-                                                value={inputValues[key] || ''}
-                                                placeholder={schema.example || ''}
-                                                onChange={(e) => handleInputChange(key, e.target.value)}
-                                                className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                                            />
-                                        </div>
-                                    ))
+                                    renderInputFields(nestedInputSchema)
                                 ) : (
                                     <textarea
                                         value={jsonInput}
@@ -3711,9 +3795,129 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
   const [testResponse, setTestResponse] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
+  const [schemaMode, setSchemaMode] = useState('form');
+  const [localSchema, setLocalSchema] = useState({});
+  const [schemaJson, setSchemaJson] = useState('{}');
+
+  useEffect(() => {
+    const nested = nestSchema(config.inputSchema || {});
+    setLocalSchema(nested);
+    setSchemaJson(JSON.stringify(nested, null, 2));
+  }, [config.inputSchema]);
 
   if (node.type === 'start') {
-    const inputSchema = config.inputSchema || {};
+    const updateSchema = (updater) => {
+      setLocalSchema(prev => {
+        const copy = JSON.parse(JSON.stringify(prev));
+        updater(copy);
+        onUpdate(flattenSchema(copy));
+        setSchemaJson(JSON.stringify(copy, null, 2));
+        return copy;
+      });
+    };
+
+    const handleFieldNameChange = (pathArr, newName) => {
+      updateSchema(schema => {
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => acc[key].fields, schema);
+        const field = parent[pathArr[pathArr.length - 1]];
+        delete parent[pathArr[pathArr.length - 1]];
+        parent[newName] = field;
+      });
+    };
+
+    const handleTypeChange = (pathArr, newType) => {
+      updateSchema(schema => {
+        const field = pathArr.reduce((acc, key, idx) => {
+          return idx === pathArr.length - 1 ? acc[key] : acc[key].fields;
+        }, schema);
+        field.type = newType;
+        if (newType === 'object') {
+          field.fields = field.fields || {};
+        } else {
+          delete field.fields;
+        }
+      });
+    };
+
+    const handleDelete = (pathArr) => {
+      updateSchema(schema => {
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => acc[key].fields, schema);
+        delete parent[pathArr[pathArr.length - 1]];
+      });
+    };
+
+    const handleAddField = (pathArr) => {
+      updateSchema(schema => {
+        const parent = pathArr.reduce((acc, key) => (key ? acc[key].fields : acc), schema);
+        let idx = 1;
+        let fieldName;
+        do {
+          fieldName = `field_${idx++}`;
+        } while (parent[fieldName]);
+        parent[fieldName] = { type: 'string' };
+      });
+    };
+
+    const renderFields = (schema, path = []) => (
+      Object.entries(schema).map(([key, value]) => {
+        const currentPath = [...path, key];
+        const level = path.length;
+        return (
+          <div key={currentPath.join('.')} className="space-y-1">
+            <div className="flex items-center gap-2" style={{ marginLeft: level * 12 }}>
+              <input
+                type="text"
+                value={key}
+                readOnly={isReadOnly}
+                onChange={(e) => handleFieldNameChange(currentPath, e.target.value)}
+                className={`flex-1 px-2 py-1 text-sm rounded border ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              />
+              <select
+                value={value.type || 'string'}
+                disabled={isReadOnly}
+                onChange={(e) => handleTypeChange(currentPath, e.target.value)}
+                className={`px-2 py-1 text-sm rounded border ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              >
+                <option value="string">string</option>
+                <option value="number">number</option>
+                <option value="boolean">boolean</option>
+                <option value="object">object</option>
+                <option value="array">array</option>
+              </select>
+              {!isReadOnly && (
+                <button onClick={() => handleDelete(currentPath)} className="text-red-500 hover:text-red-600">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {value.type === 'object' && !isReadOnly && (
+                <button onClick={() => handleAddField(currentPath)} className="text-xs px-1">
+                  + Field
+                </button>
+              )}
+            </div>
+            {value.type === 'object' && value.fields && renderFields(value.fields, currentPath)}
+          </div>
+        );
+      })
+    );
+
+    const applyJson = () => {
+      try {
+        const parsed = JSON.parse(schemaJson || '{}');
+        setLocalSchema(parsed);
+        onUpdate(flattenSchema(parsed));
+      } catch (e) {
+        showToast('Invalid JSON', 'error');
+      }
+    };
 
     return (
       <div className={`w-96 border-l ${
@@ -3721,9 +3925,11 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       } overflow-y-auto`}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              Input Structure
-            </h3>
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Input Structure</h3>
+            <div className="flex gap-2 text-xs">
+              <button onClick={() => setSchemaMode('form')} className={schemaMode === 'form' ? 'text-blue-500' : ''}>Form</button>
+              <button onClick={() => setSchemaMode('json')} className={schemaMode === 'json' ? 'text-blue-500' : ''}>JSON</button>
+            </div>
             <button
               onClick={onClose}
               className={`p-1 rounded transition-colors ${
@@ -3734,83 +3940,46 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
             </button>
           </div>
 
-          <div className="space-y-2">
-            {Object.entries(inputSchema).map(([key, schema]) => (
-              <div key={key} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={key}
-                  readOnly={isReadOnly}
-                  onChange={(e) => {
-                    const updated = { ...inputSchema };
-                    const value = updated[key];
-                    delete updated[key];
-                    updated[e.target.value] = value;
-                    onUpdate(updated);
-                  }}
-                  className={`flex-1 px-2 py-1 text-sm rounded border ${
+          {schemaMode === 'form' ? (
+            <div className="space-y-2">
+              {renderFields(localSchema)}
+              {!isReadOnly && (
+                <button
+                  onClick={() => handleAddField([])}
+                  className={`px-2 py-1 text-sm rounded border w-full text-left ${
                     theme === 'dark'
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-300'
-                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                />
-                <select
-                  value={schema.type || 'string'}
-                  disabled={isReadOnly}
-                  onChange={(e) => {
-                    const updated = { ...inputSchema };
-                    updated[key] = { ...schema, type: e.target.value };
-                    onUpdate(updated);
-                  }}
+                      ? 'bg-gray-700 border-gray-600 text-gray-300'
+                      : 'bg-white border-gray-300 text-gray-700'
+                  }`}
+                >
+                  + Add Field
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={schemaJson}
+                onChange={(e) => setSchemaJson(e.target.value)}
+                className={`w-full h-40 px-3 py-2 rounded-lg border font-mono text-sm ${
+                  theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                }`}
+                readOnly={isReadOnly}
+              />
+              {!isReadOnly && (
+                <button
+                  onClick={applyJson}
                   className={`px-2 py-1 text-sm rounded border ${
                     theme === 'dark'
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-300'
-                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      ? 'bg-gray-700 border-gray-600 text-gray-300'
+                      : 'bg-white border-gray-300 text-gray-700'
+                  }`}
                 >
-                  <option value="string">string</option>
-                  <option value="number">number</option>
-                  <option value="boolean">boolean</option>
-                  <option value="object">object</option>
-                  <option value="array">array</option>
-                </select>
-                {!isReadOnly && (
-                  <button
-                    onClick={() => {
-                      const updated = { ...inputSchema };
-                      delete updated[key];
-                      onUpdate(updated);
-                    }}
-                    className="text-red-500 hover:text-red-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-
-            {!isReadOnly && (
-              <button
-                onClick={() => {
-                  const updated = { ...inputSchema };
-                  let idx = 1;
-                  let fieldName;
-                  do {
-                    fieldName = `field_${idx++}`;
-                  } while (updated[fieldName]);
-                  updated[fieldName] = { type: 'string' };
-                  onUpdate(updated);
-                }}
-                className={`px-2 py-1 text-sm rounded border w-full text-left ${
-                  theme === 'dark'
-                    ? 'bg-gray-700 border-gray-600 text-gray-300'
-                    : 'bg-white border-gray-300 text-gray-700'
-                }`}
-              >
-                + Add Field
-              </button>
-            )}
-          </div>
+                  Apply
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
