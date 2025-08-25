@@ -232,7 +232,7 @@ const Skeleton = ({ className = '', variant = 'text' }) => {
 // Execution Results Panel
 const ExecutionResultsPanel = ({ results, onClose, theme }) => {
   return (
-    <div className={`w-96 border-l ${
+    <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
       theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
     } overflow-y-auto`}>
       <div className="p-6">
@@ -390,7 +390,7 @@ const transformConfigToUserFormat = (config) => {
 
 
 // JSON Editor Component (MODIFIED to be a read-only view)
-const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
+const JsonEditor = ({ config, theme, onClose, isReadOnly = true, onApply }) => {
   // Generate the user-facing JSON using the transformation logic
   const userFormattedJson = useMemo(() => {
     const formatted = transformConfigToUserFormat(config);
@@ -431,11 +431,30 @@ const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
             Generated JSON Configuration View
           </h3>
           <div className="flex items-center gap-3">
+            {!isReadOnly && onApply && (
+              <button
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(jsonText);
+                    onApply(parsed);
+                  } catch (e) {
+                    alert('Invalid JSON');
+                  }
+                }}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-green-700 hover:bg-green-600 text-white'
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                Apply
+              </button>
+            )}
             <button
                 onClick={copyToClipboard}
                 className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
-                    theme === 'dark' 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                    theme === 'dark'
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
                 }`}
             >
@@ -445,8 +464,8 @@ const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
             <button
               onClick={onClose}
               className={`p-2 rounded-lg transition-colors ${
-                theme === 'dark' 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                theme === 'dark'
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                   : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
               }`}
             >
@@ -3134,6 +3153,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           theme={theme}
           onClose={() => setShowJsonEditor(false)}
           isReadOnly={isReadOnly}
+          onApply={(updated) => { onUpdate(updated); setShowJsonEditor(false); }}
         />
       )}
       
@@ -3216,6 +3236,21 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
     const newY = (canvasRect.height - contentHeight * newZoom) / 2 - minY * newZoom;
 
     setView({ x: newX, y: newY, zoom: newZoom });
+  };
+
+  const handleBeautify = () => {
+    if (!config.workflow?.nodes) return;
+    const spacingX = 220;
+    const spacingY = 120;
+    const nodes = config.workflow.nodes.map((n, idx) => ({
+      ...n,
+      position: {
+        x: (idx % 4) * spacingX,
+        y: Math.floor(idx / 4) * spacingY
+      }
+    }));
+    onUpdate({ ...config, workflow: { ...config.workflow, nodes } });
+    setTimeout(() => handleFitToScreen(), 0);
   };
   
   const handleDragStart = (e, nodeType) => {
@@ -3741,6 +3776,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
            <div className="absolute bottom-4 right-4 flex items-center gap-1">
                 <button onClick={() => handleZoom('out')} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ZoomOut className="w-5 h-5" /></button>
                 <button onClick={handleFitToScreen} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Maximize2 className="w-5 h-5" /></button>
+                <button onClick={handleBeautify} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Sparkles className="w-5 h-5" /></button>
                 <button onClick={() => handleZoom('in')} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ZoomIn className="w-5 h-5" /></button>
             </div>
         </div>
@@ -3818,7 +3854,10 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
 
     const handleFieldNameChange = (pathArr, newName) => {
       updateSchema(schema => {
-        const parent = pathArr.slice(0, -1).reduce((acc, key) => acc[key].fields, schema);
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => {
+          if (key === 'items') return acc.items.fields;
+          return acc[key].fields;
+        }, schema);
         const field = parent[pathArr[pathArr.length - 1]];
         delete parent[pathArr[pathArr.length - 1]];
         parent[newName] = field;
@@ -3833,22 +3872,49 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
         field.type = newType;
         if (newType === 'object') {
           field.fields = field.fields || {};
+          delete field.items;
+        } else if (newType === 'array') {
+          field.items = field.items || { type: 'string' };
+          delete field.fields;
         } else {
           delete field.fields;
+          delete field.items;
+        }
+      });
+    };
+
+    const handleItemTypeChange = (pathArr, newType) => {
+      updateSchema(schema => {
+        const field = pathArr.reduce((acc, key, idx) => {
+          return idx === pathArr.length - 1 ? acc[key] : acc[key].fields;
+        }, schema);
+        field.items = field.items || {};
+        field.items.type = newType;
+        if (newType === 'object') {
+          field.items.fields = field.items.fields || {};
+        } else {
+          delete field.items.fields;
         }
       });
     };
 
     const handleDelete = (pathArr) => {
       updateSchema(schema => {
-        const parent = pathArr.slice(0, -1).reduce((acc, key) => acc[key].fields, schema);
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => {
+          if (key === 'items') return acc.items.fields;
+          return acc[key].fields;
+        }, schema);
         delete parent[pathArr[pathArr.length - 1]];
       });
     };
 
     const handleAddField = (pathArr) => {
       updateSchema(schema => {
-        const parent = pathArr.reduce((acc, key) => (key ? acc[key].fields : acc), schema);
+        const parent = pathArr.reduce((acc, key) => {
+          if (!key) return acc;
+          if (key === 'items') return acc.items.fields;
+          return acc[key].fields;
+        }, schema);
         let idx = 1;
         let fieldName;
         do {
@@ -3892,6 +3958,23 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                 <option value="object">object</option>
                 <option value="array">array</option>
               </select>
+              {value.type === 'array' && (
+                <select
+                  value={value.items?.type || 'string'}
+                  disabled={isReadOnly}
+                  onChange={(e) => handleItemTypeChange(currentPath, e.target.value)}
+                  className={`px-2 py-1 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300'
+                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                >
+                  <option value="string">string</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                  <option value="object">object</option>
+                </select>
+              )}
               {!isReadOnly && (
                 <button onClick={() => handleDelete(currentPath)} className="text-red-500 hover:text-red-600">
                   <X className="w-4 h-4" />
@@ -3902,8 +3985,16 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                   + Field
                 </button>
               )}
+              {value.type === 'array' && value.items?.type === 'object' && !isReadOnly && (
+                <button onClick={() => handleAddField([...currentPath, 'items'])} className="text-xs px-1">
+                  + Field
+                </button>
+              )}
             </div>
             {value.type === 'object' && value.fields && renderFields(value.fields, currentPath)}
+            {value.type === 'array' && value.items?.type === 'object' && value.items.fields && (
+              renderFields(value.items.fields, [...currentPath, 'items'])
+            )}
           </div>
         );
       })
@@ -3920,7 +4011,7 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     };
 
     return (
-      <div className={`w-96 border-l ${
+      <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
         theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       } overflow-y-auto`}>
         <div className="p-6">
@@ -4117,10 +4208,10 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     };
   };
   
-  return (
-    <div className={`w-96 border-l ${
-      theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-    } overflow-y-auto`}>
+    return (
+      <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
+        theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      } overflow-y-auto`}>
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
