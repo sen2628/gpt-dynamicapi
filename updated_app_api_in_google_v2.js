@@ -31,6 +31,9 @@ import envConfig from './env-config.json';
 import logoLight from './app-integrator-logo-light.svg';
 import logoDark from './app-integrator-logo-dark.svg';
 import apiCatalog from './api-catalog.json';
+import filterUtils from './filter-utils.js';
+
+const { parseWhereInput } = filterUtils;
 
 // Base URL for executing integrator configurations
 const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
@@ -426,27 +429,7 @@ const ExecutionResultsPanel = ({ results, onClose, theme }) => {
   );
 };
 
-// Helper function to transform internal config to user-specified JSON format
-const parseWhereInput = (input) => {
-    if (typeof input === 'object' && input !== null) return input;
-    if (!input || (typeof input === 'string' && input.trim() === '')) return null;
-    try {
-        return JSON.parse(input);
-    } catch {
-        return { expr: String(input).trim() };
-    }
-};
-
-const hasPredicate = (where) => {
-    if (!where) return false;
-    if (typeof where === 'string') return where.trim().length > 0;
-    if (where.expr && String(where.expr).trim() !== '') return true;
-    if (Array.isArray(where.predicates) && where.predicates.length > 0) return true;
-    if (where.path && where.op) return true;
-    const combinators = where.and || where.or;
-    if (Array.isArray(combinators)) return combinators.some(hasPredicate);
-    return false;
-};
+// Helper functions moved to filter-utils.js
 
 // Compile mapper rows into transformation steps
 const compileMapperToSteps = (scopePath = '', rows = [], mode = 'rename') => {
@@ -553,27 +536,29 @@ const transformConfigToUserFormat = (config) => {
                     break;
 
                 case 'filter': {
-                    const where = parseWhereInput(node.data.where ?? node.data.whereInput);
-                    if (hasPredicate(where)) {
+                    if (node.data.whereError) {
+                        throw new Error('Invalid filter predicate');
+                    }
+                    const scope = node.data.target || '';
+                    const where = node.data.where ?? null;
+                    transformations.push({
+                        op: 'filter',
+                        target: scope,
+                        config: {
+                            mode: node.data.mode || 'keep',
+                            where
+                        },
+                        onError: node.data.onError || 'continue'
+                    });
+                    if (node.data.offset != null || node.data.limit != null) {
                         transformations.push({
-                            op: 'filter',
-                            target: '',
+                            op: 'post_limit',
+                            target: scope,
                             config: {
-                                mode: node.data.mode || 'keep',
-                                where
-                            },
-                            onError: node.data.onError || 'continue'
+                                ...(node.data.offset != null ? { offset: node.data.offset } : {}),
+                                ...(node.data.limit != null ? { limit: node.data.limit } : {})
+                            }
                         });
-                        if (node.data.offset != null || node.data.limit != null) {
-                            transformations.push({
-                                op: 'post_limit',
-                                target: '',
-                                config: {
-                                    ...(node.data.offset != null ? { offset: node.data.offset } : {}),
-                                    ...(node.data.limit != null ? { limit: node.data.limit } : {})
-                                }
-                            });
-                        }
                     }
                     break;
                 }
@@ -3803,7 +3788,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
         label: nodeTypes.find(n => n.type === nodeType)?.label || nodeType,
         status: 'idle',
         ...(nodeType === 'filter'
-          ? { mode: 'keep', where: null, whereInput: '', offset: undefined, limit: undefined }
+          ? { mode: 'keep', where: null, whereInput: '', whereError: null, offset: undefined, limit: undefined }
           : {})
       }
     };
@@ -5401,10 +5386,16 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                 readOnly={isReadOnly}
                 onChange={(e) => {
                   const text = e.target.value;
-                  const parsed = parseWhereInput(text);
+                  let parsed = null;
+                  let error = null;
+                  try {
+                    parsed = parseWhereInput(text);
+                  } catch (err) {
+                    error = err.message;
+                  }
                   onUpdate({
                     ...node,
-                    data: { ...node.data, where: parsed, whereInput: text }
+                    data: { ...node.data, where: parsed, whereInput: text, whereError: error }
                   });
                 }}
                 placeholder="expr or predicate JSON"
@@ -5412,8 +5403,12 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                   theme === 'dark'
                     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                     : 'bg-white border-gray-300'
-                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                } ${node.data.whereError ? 'border-red-500' : ''} ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
               />
+
+              {node.data.whereError && (
+                <div className="text-red-500 text-xs">{node.data.whereError}</div>
+              )}
 
               <div className="flex gap-2">
                 <div className="flex-1">
