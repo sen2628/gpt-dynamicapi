@@ -30,6 +30,7 @@ import {
 import envConfig from './env-config.json';
 import logoLight from './app-integrator-logo-light.svg';
 import logoDark from './app-integrator-logo-dark.svg';
+import apiCatalog from './api-catalog.json';
 
 const ENV_SETTINGS = Object.fromEntries(
   (envConfig.environments || []).map(e => [e.categoryId, e.categoryValues])
@@ -3633,20 +3634,28 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
         </div>
         
         {/* Properties Panel */}
-        {selectedNode && selectedNode.type !== 'start' && selectedNode.type !== 'end' && (
+        {selectedNode && selectedNode.type !== 'end' && (
           <NodePropertiesPanel
             node={selectedNode}
-            onUpdate={(updatedNode) => {
-              const updatedNodes = (config.workflow?.nodes || []).map(n =>
-                n.id === updatedNode.id ? updatedNode : n
-              );
-              onUpdate({
-                ...config,
-                workflow: {
-                  ...config.workflow,
-                  nodes: updatedNodes
-                }
-              });
+            environment={environment}
+            onUpdate={(updated) => {
+              if (selectedNode.type === 'start') {
+                onUpdate({
+                  ...config,
+                  inputSchema: updated
+                });
+              } else {
+                const updatedNodes = (config.workflow?.nodes || []).map(n =>
+                  n.id === updated.id ? updated : n
+                );
+                onUpdate({
+                  ...config,
+                  workflow: {
+                    ...config.workflow,
+                    nodes: updatedNodes
+                  }
+                });
+              }
             }}
             onClose={() => setSelectedNode(null)}
             theme={theme}
@@ -3670,10 +3679,114 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
 };
 
 // Enhanced Node Properties Panel
-const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config, isReadOnly }) => {
+const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config, isReadOnly, environment }) => {
   const [testResponse, setTestResponse] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
+
+  if (node.type === 'start') {
+    const inputSchema = config.inputSchema || {};
+
+    return (
+      <div className={`w-96 border-l ${
+        theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      } overflow-y-auto`}>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              Input Structure
+            </h3>
+            <button
+              onClick={onClose}
+              className={`p-1 rounded transition-colors ${
+                theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+              }`}
+            >
+              <X className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {Object.entries(inputSchema).map(([key, schema]) => (
+              <div key={key} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={key}
+                  readOnly={isReadOnly}
+                  onChange={(e) => {
+                    const updated = { ...inputSchema };
+                    const value = updated[key];
+                    delete updated[key];
+                    updated[e.target.value] = value;
+                    onUpdate(updated);
+                  }}
+                  className={`flex-1 px-2 py-1 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300'
+                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                />
+                <select
+                  value={schema.type || 'string'}
+                  disabled={isReadOnly}
+                  onChange={(e) => {
+                    const updated = { ...inputSchema };
+                    updated[key] = { ...schema, type: e.target.value };
+                    onUpdate(updated);
+                  }}
+                  className={`px-2 py-1 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300'
+                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                >
+                  <option value="string">string</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                  <option value="object">object</option>
+                  <option value="array">array</option>
+                </select>
+                {!isReadOnly && (
+                  <button
+                    onClick={() => {
+                      const updated = { ...inputSchema };
+                      delete updated[key];
+                      onUpdate(updated);
+                    }}
+                    className="text-red-500 hover:text-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {!isReadOnly && (
+              <button
+                onClick={() => {
+                  const updated = { ...inputSchema };
+                  let idx = 1;
+                  let fieldName;
+                  do {
+                    fieldName = `field_${idx++}`;
+                  } while (updated[fieldName]);
+                  updated[fieldName] = { type: 'string' };
+                  onUpdate(updated);
+                }}
+                className={`px-2 py-1 text-sm rounded border w-full text-left ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-gray-300'
+                    : 'bg-white border-gray-300 text-gray-700'
+                }`}
+              >
+                + Add Field
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleTestApi = async () => {
     setIsTesting(true);
@@ -3882,7 +3995,51 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
               } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
             />
           </div>
-          
+
+          {(node.type === 'api' || node.type === 'graphql') && (
+            <div>
+              <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+              }`}>
+                Predefined {node.type === 'api' ? 'REST' : 'GraphQL'} API
+              </label>
+              <select
+                value={node.data.predefinedId || ''}
+                disabled={isReadOnly}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) {
+                    onUpdate({ ...node, data: { ...node.data, predefinedId: '' } });
+                    return;
+                  }
+                  const catalog = node.type === 'api' ? apiCatalog.restApis : apiCatalog.graphqlApis;
+                  const api = catalog.find(a => a.id === id);
+                  if (api) {
+                    onUpdate({
+                      ...node,
+                      data: {
+                        ...node.data,
+                        predefinedId: id,
+                        method: api.method || node.data.method,
+                        endpoint: api.environments ? (api.environments[environment] || api.endpoint) : api.endpoint,
+                        query: api.query || node.data.query,
+                        authentication: api.auth || node.data.authentication
+                      }
+                    });
+                  }
+                }}
+                className={`w-full px-3 py-2 rounded-lg border ${
+                  theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              >
+                <option value="">Custom</option>
+                {(node.type === 'api' ? apiCatalog.restApis : apiCatalog.graphqlApis).map(api => (
+                  <option key={api.id} value={api.id}>{api.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* API/GraphQL Configuration */}
           {(node.type === 'api' || node.type === 'graphql') && (
             <>
