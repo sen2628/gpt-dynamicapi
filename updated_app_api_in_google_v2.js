@@ -58,6 +58,14 @@ const TRANSFORM_OPS = {
   array_take: {
     label: 'Array Take',
     defaultConfig: { count: 1 }
+  },
+  flatten: {
+    label: 'Flatten',
+    defaultConfig: { delimiter: '.', depth: 0, preserveArrays: false }
+  },
+  unflatten: {
+    label: 'Unflatten',
+    defaultConfig: { delimiter: '.', overwrite: false }
   }
 };
 
@@ -5190,6 +5198,61 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                           onChange={(e) => updateTransformation(transform.id, { config: { count: Number(e.target.value) } })}
                           className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                         />
+                      )}
+
+                      {transform.op === 'flatten' && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Delimiter"
+                            value={transform.config.delimiter || '.'}
+                            readOnly={isReadOnly}
+                            onChange={(e) => updateTransformation(transform.id, { config: { delimiter: e.target.value } })}
+                            className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Depth (0 = unlimited)"
+                            value={transform.config.depth ?? 0}
+                            readOnly={isReadOnly}
+                            onChange={(e) => updateTransformation(transform.id, { config: { depth: Number(e.target.value) } })}
+                            className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                          />
+                          <label className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={transform.config.preserveArrays || false}
+                              disabled={isReadOnly}
+                              onChange={(e) => updateTransformation(transform.id, { config: { preserveArrays: e.target.checked } })}
+                              className="rounded"
+                            />
+                            Preserve arrays
+                          </label>
+                        </div>
+                      )}
+
+                      {transform.op === 'unflatten' && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Delimiter"
+                            value={transform.config.delimiter || '.'}
+                            readOnly={isReadOnly}
+                            onChange={(e) => updateTransformation(transform.id, { config: { delimiter: e.target.value } })}
+                            className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                          />
+                          <label className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={transform.config.overwrite || false}
+                              disabled={isReadOnly}
+                              onChange={(e) => updateTransformation(transform.id, { config: { overwrite: e.target.checked } })}
+                              className="rounded"
+                            />
+                            Overwrite existing
+                          </label>
+                        </div>
                       )}
                     </div>
                   </div>
