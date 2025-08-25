@@ -63,8 +63,12 @@ const flattenSchema = (nested = {}, prefix = '') => {
   let flat = {};
   Object.entries(nested).forEach(([key, schema]) => {
     const path = prefix ? `${prefix}.${key}` : key;
-    if (schema.type === 'object' && schema.fields) {
-      flat = { ...flat, ...flattenSchema(schema.fields, path) };
+    if (schema.type === 'object') {
+      const { fields, ...rest } = schema;
+      flat[path] = { type: 'object', ...rest };
+      if (fields) {
+        flat = { ...flat, ...flattenSchema(fields, path) };
+      }
     } else {
       const { fields, ...rest } = schema;
       flat[path] = rest;
@@ -226,6 +230,46 @@ const Skeleton = ({ className = '', variant = 'text' }) => {
 
   return <div className={`${baseClass} ${className}`}></div>;
 };
+
+const HelpModal = ({ onClose, theme }) => (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className={`max-w-3xl w-full max-h-[80vh] overflow-y-auto rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}>
+      <div className={`flex items-center justify-between p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+        <h2 className="text-lg font-semibold">Component Reference</h2>
+        <button onClick={onClose} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="p-4 space-y-6 text-sm">
+        <section>
+          <h3 className="font-medium mb-1">Transform</h3>
+          <p>Modify incoming data using operations like rename, flatten, nest or compute.</p>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>Rename: users.name → username</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Filter</h3>
+          <p>Keep records where a field meets a condition.</p>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Field: price\nCondition: > 100`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Aggregate</h3>
+          <p>Combine or summarize data such as merging objects or summing values.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li>Merge Objects</li>
+            <li>Concatenate Arrays</li>
+            <li>Sum/Average/Count Field</li>
+            <li>Group By Field</li>
+          </ul>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Condition</h3>
+          <p>Branch the workflow based on an expression.</p>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>user.age &gt; 18</pre>
+        </section>
+      </div>
+    </div>
+  </div>
+);
 
 // --- MODAL & PANEL COMPONENTS ---
 
@@ -4337,6 +4381,9 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
         "location.country": { type: "string" },
     };
   };
+
+  const availableFields = Object.keys(getSourceSchemaForTransform());
+  const fieldOptionsId = `field-options-${node.id}`;
   
     return (
       <div
@@ -4386,6 +4433,11 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
             />
         ) : (
         <div className="space-y-4">
+          <datalist id={fieldOptionsId}>
+            {availableFields.map(f => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
           <div>
             <label className={`block text-sm font-medium mb-1 ${
               theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
@@ -4675,7 +4727,7 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     {/* Transformation Config */}
                     {transform.type === 'rename' && (
                       <div className="grid grid-cols-2 gap-2">
-                        <input type="text" placeholder="From field" value={transform.config.from || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, from: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
+                        <input type="text" list={fieldOptionsId} placeholder="From field" value={transform.config.from || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, from: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
                         <input type="text" placeholder="To field" value={transform.config.to || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, to: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
                       </div>
                     )}
@@ -4691,24 +4743,44 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
 
           {/* Filter Configuration */}
           {node.type === 'filter' && (
-            <div>
+            <div className="space-y-2">
                 <label className={`block text-sm font-medium mb-1 ${
                 theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
                 }`}>
-                Filter Condition
+                Field
                 </label>
-                <textarea
-                value={node.data.filterCondition || ''}
+                <input
+                type="text"
+                list={fieldOptionsId}
+                value={node.data.field || ''}
                 readOnly={isReadOnly}
                 onChange={(e) => onUpdate({
                     ...node,
-                    data: { ...node.data, filterCondition: e.target.value }
+                    data: { ...node.data, field: e.target.value }
                 })}
-                placeholder="e.g., item.price > 100 && item.category === 'electronics'"
-                rows={3}
+                className={`w-full px-3 py-2 rounded-lg border ${
+                    theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                />
+                <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                Condition
+                </label>
+                <input
+                type="text"
+                value={node.data.condition || ''}
+                readOnly={isReadOnly}
+                onChange={(e) => onUpdate({
+                    ...node,
+                    data: { ...node.data, condition: e.target.value }
+                })}
+                placeholder="e.g., > 100"
                 className={`w-full px-3 py-2 rounded-lg border font-mono text-sm ${
-                    theme === 'dark' 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
+                    theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                     : 'bg-white border-gray-300'
                 } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                 />
@@ -4732,8 +4804,8 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     data: { ...node.data, aggregationType: e.target.value }
                     })}
                     className={`w-full px-3 py-2 rounded-lg border ${
-                    theme === 'dark' 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                    theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300'
                     } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                 >
@@ -4745,8 +4817,63 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     <option value="group">Group By Field</option>
                 </select>
                 </div>
+                {['sum','average','count','group'].includes(node.data.aggregationType) && (
+                  <div className="mt-2">
+                    <label className={`block text-sm font-medium mb-1 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Field
+                    </label>
+                    <input
+                      type="text"
+                      list={fieldOptionsId}
+                      value={node.data.field || ''}
+                      readOnly={isReadOnly}
+                      onChange={(e) => onUpdate({
+                        ...node,
+                        data: { ...node.data, field: e.target.value }
+                      })}
+                      className={`w-full px-3 py-2 rounded-lg border ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300'
+                      } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                    />
+                  </div>
+                )}
             </>
             )}
+
+          {node.type === 'condition' && (
+            <div>
+              <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+              }`}>
+                Condition Expression
+              </label>
+              <input
+                type="text"
+                list={fieldOptionsId}
+                value={node.data.condition || ''}
+                readOnly={isReadOnly}
+                onChange={(e) => onUpdate({
+                  ...node,
+                  data: { ...node.data, condition: e.target.value }
+                })}
+                placeholder="e.g., user.age > 18"
+                className={`w-full px-3 py-2 rounded-lg border font-mono text-sm ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              />
+              <p className={`text-xs mt-1 ${
+                theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+              }`}>
+                True branch follows the 'Yes' connection.
+              </p>
+            </div>
+          )}
 
         </div>
         )}
@@ -4773,6 +4900,7 @@ const App = () => {
   ]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
   
@@ -5469,10 +5597,10 @@ const App = () => {
               )}
             </button>
             
-            {showNotifications && (
-              <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 ${
-                theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+          {showNotifications && (
+            <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 ${
+              theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
                 <div className={`p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                   <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Notifications</h3>
                 </div>
@@ -5513,7 +5641,16 @@ const App = () => {
               </div>
             )}
           </div>
-          
+
+          <button
+            onClick={() => setShowHelp(true)}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+            }`}
+          >
+            <HelpCircle className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`} />
+          </button>
+
           {/* Profile */}
           <div className="relative profile-dropdown">
             <button
@@ -5572,7 +5709,11 @@ const App = () => {
           {renderContent()}
         </main>
       </div>
-      
+
+      {showHelp && (
+        <HelpModal onClose={() => setShowHelp(false)} theme={theme} />
+      )}
+
       {/* Toast Notifications */}
       {toast && (
         <Toast
