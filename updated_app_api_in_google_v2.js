@@ -446,8 +446,14 @@ const transformConfigToUserFormat = (config) => {
 
                 case 'filter':
                     transformations.push({
-                        type: 'filter',
-                        rules: [{ expression: node.data.filterCondition || 'condition not set' }]
+                        op: 'filter',
+                        target: '',
+                        config: {
+                            rules: [
+                                { expression: node.data.filterCondition || 'condition not set' }
+                            ]
+                        },
+                        onError: node.data.onError || 'continue'
                     });
                     break;
 
@@ -463,16 +469,21 @@ const transformConfigToUserFormat = (config) => {
                             limit: node.data.limit,
                             pivot: node.data.pivot,
                             rollup: node.data.rollup || false
-                        }
+                        },
+                        onError: node.data.onError || 'continue'
                     });
                     break;
 
                 case 'condition':
-                     transformations.push({
-                        type: 'condition',
-                        if: node.data.if || { field: "status", operator: "equals", value: "active" },
-                        then: node.data.then || { set: { "isActive": true } },
-                        else: node.data.else || { set: { "isActive": false } }
+                    transformations.push({
+                        op: 'condition',
+                        target: '',
+                        config: {
+                            if: node.data.if || { field: "status", operator: "equals", value: "active" },
+                            then: node.data.then || { set: { "isActive": true } },
+                            else: node.data.else || { set: { "isActive": false } }
+                        },
+                        onError: node.data.onError || 'continue'
                     });
                     break;
 
