@@ -368,10 +368,10 @@ const HelpModal = ({ onClose, theme }) => (
             </div>
           ))}
         </section>
-</div>
-    </div>
+        </div>
+      </div>
   </div>
-);
+  );
 
 // --- MODAL & PANEL COMPONENTS ---
 
