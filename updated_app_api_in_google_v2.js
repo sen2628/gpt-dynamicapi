@@ -477,6 +477,64 @@ const transformConfigToUserFormat = (config) => {
     };
 };
 
+// Generate a minimal OpenAPI specification from current configuration
+const generateApiSpec = (config) => {
+    const paths = {};
+    (config.workflow?.nodes || []).forEach(node => {
+        if (node.type === 'api' || node.type === 'graphql') {
+            const method = (node.data.method || (node.type === 'graphql' ? 'POST' : 'GET')).toLowerCase();
+            const endpoint = node.data.endpoint || '/';
+            paths[endpoint] = paths[endpoint] || {};
+            paths[endpoint][method] = {
+                summary: node.data.label || node.id,
+                responses: { '200': { description: 'Successful response' } }
+            };
+        }
+    });
+    return {
+        openapi: '3.0.0',
+        info: {
+            title: config.name || 'API',
+            version: config.versions?.find(v => v.isCurrent)?.version?.toString() || '1.0.0'
+        },
+        paths
+    };
+};
+
+const ApiSpecModal = ({ config, theme, onClose }) => {
+  const spec = useMemo(() => generateApiSpec(config), [config]);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(JSON.stringify(spec, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className={`max-w-3xl w-full max-h-[80vh] overflow-y-auto rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}>
+        <div className={`flex items-center justify-between p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+          <h2 className="text-lg font-semibold">API Specification</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={handleCopy} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </button>
+            <button onClick={onClose} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <div className="p-4">
+          <pre className={`text-xs overflow-x-auto p-2 rounded ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
+            {JSON.stringify(spec, null, 2)}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // JSON Editor Component (MODIFIED to be a read-only view)
 const JsonEditor = ({ config, theme, onClose, isReadOnly = true, onApply }) => {
@@ -2634,12 +2692,15 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
             <div
               key={config.id}
               onClick={() => onSelectConfig(config, 'view')}
-              className={`relative group flex flex-col rounded-lg shadow-sm border p-6 transition-all cursor-pointer ${
-                theme === 'dark' 
-                  ? 'bg-gray-800 border-gray-700 hover:border-gray-600' 
-                  : 'bg-white border-gray-200 hover:border-gray-300'
+              className={`relative group flex flex-col rounded-2xl overflow-hidden p-6 transition-transform cursor-pointer ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:shadow-2xl hover:-translate-y-1'
+                  : 'bg-gradient-to-br from-white to-gray-50 border border-gray-200 hover:shadow-2xl hover:-translate-y-1'
               }`}
             >
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 opacity-20 rounded-full blur-2xl"></div>
+              </div>
               <div className="flex-1">
                 <div className="flex items-start justify-between mb-4">
                   <h3 className={`font-semibold pr-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -2888,13 +2949,14 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
 };
 
 // Enhanced API Studio Component
-const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion, onModeChange }) => {
+const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion, onModeChange, onShowHelp }) => {
   const [activeTab, setActiveTab] = useState('workflow');
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResults, setExecutionResults] = useState(null);
   const [executionSteps, setExecutionSteps] = useState([]);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [showApiSpec, setShowApiSpec] = useState(false);
   const [testInputs, setTestInputs] = useState({});
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [viewingVersion, setViewingVersion] = useState(null);
@@ -3128,6 +3190,27 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               JSON View
             </button>
 
+            <button
+              onClick={() => setShowApiSpec(true)}
+              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                theme === 'dark'
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <FileCode className="w-4 h-4" />
+              API Spec
+            </button>
+
+            <button
+              onClick={onShowHelp}
+              className={`p-2 rounded-lg transition-colors ${
+                theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+              }`}
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
+
             {permissions.allowEdit && (
               <button
                 onClick={() => onModeChange(mode === 'view' ? 'edit' : 'view')}
@@ -3280,7 +3363,15 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           onApply={(updated) => { onUpdate(updated); setShowJsonEditor(false); }}
         />
       )}
-      
+
+      {showApiSpec && (
+        <ApiSpecModal
+          config={viewingVersion ? { ...config, ...viewingVersion.content } : config}
+          theme={theme}
+          onClose={() => setShowApiSpec(false)}
+        />
+      )}
+
       {showPromoteModal && (
         <PromoteModal
           config={config}
@@ -5513,6 +5604,7 @@ const App = () => {
             environment={environment}
             theme={theme}
             showToast={showToast}
+            onShowHelp={() => setShowHelp(true)}
           />
         ) : null;
       
@@ -5686,15 +5778,6 @@ const App = () => {
               </div>
             )}
           </div>
-
-          <button
-            onClick={() => setShowHelp(true)}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-            }`}
-          >
-            <HelpCircle className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`} />
-          </button>
 
           {/* Profile */}
           <div className="relative profile-dropdown">
