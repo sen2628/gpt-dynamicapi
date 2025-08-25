@@ -1,0 +1,41 @@
+{
+  "restApis": [
+    {
+      "id": "weatherCurrent",
+      "name": "Weather - Current",
+      "method": "GET",
+      "endpoint": "https://api.weatherapi.com/v1/current.json",
+      "environments": {
+        "dev": "https://api.weatherapi.com/v1/current.json",
+        "prod": "https://api.weatherapi.com/v1/current.json"
+      },
+      "auth": { "type": "None" },
+      "inputSchema": {
+        "q": { "type": "string", "required": true, "description": "Location query" },
+        "key": { "type": "string", "required": true, "description": "API key" }
+      },
+      "outputSchema": {
+        "current.temp_c": { "type": "number" },
+        "current.condition.text": { "type": "string" }
+      }
+    }
+  ],
+  "graphqlApis": [
+    {
+      "id": "countries",
+      "name": "Countries GraphQL",
+      "endpoint": "https://countries.trevorblades.com/",
+      "query": "query { countries { code name } }",
+      "environments": {
+        "dev": "https://countries.trevorblades.com/",
+        "prod": "https://countries.trevorblades.com/"
+      },
+      "auth": { "type": "None" },
+      "inputSchema": {},
+      "outputSchema": {
+        "data.countries[].code": { "type": "string" },
+        "data.countries[].name": { "type": "string" }
+      }
+    }
+  ]
+}
