@@ -30,12 +30,82 @@ import {
 import envConfig from './env-config.json';
 import logoLight from './app-integrator-logo-light.svg';
 import logoDark from './app-integrator-logo-dark.svg';
+import apiCatalog from './api-catalog.json';
+
+// Base URL for executing integrator configurations
+const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
 
 const ENV_SETTINGS = Object.fromEntries(
   (envConfig.environments || []).map(e => [e.categoryId, e.categoryValues])
 );
 
 const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
+
+// Utilities to convert between flat and nested representations
+const nestSchema = (flat = {}) => {
+  const nested = {};
+  Object.entries(flat).forEach(([path, schema]) => {
+    const parts = path.split('.');
+    let current = nested;
+    parts.forEach((part, idx) => {
+      if (idx === parts.length - 1) {
+        current[part] = { ...schema };
+      } else {
+        current[part] = current[part] || { type: 'object', fields: {} };
+        current = current[part].fields;
+      }
+    });
+  });
+  return nested;
+};
+
+const flattenSchema = (nested = {}, prefix = '') => {
+  let flat = {};
+  Object.entries(nested).forEach(([key, schema]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (schema.type === 'object') {
+      const { fields, ...rest } = schema;
+      flat[path] = { type: 'object', ...rest };
+      if (fields) {
+        flat = { ...flat, ...flattenSchema(fields, path) };
+      }
+    } else {
+      const { fields, ...rest } = schema;
+      flat[path] = rest;
+    }
+  });
+  return flat;
+};
+
+const nestValues = (flat = {}) => {
+  const nested = {};
+  Object.entries(flat).forEach(([path, value]) => {
+    const parts = path.split('.');
+    let current = nested;
+    parts.forEach((part, idx) => {
+      if (idx === parts.length - 1) {
+        current[part] = value;
+      } else {
+        current[part] = current[part] || {};
+        current = current[part];
+      }
+    });
+  });
+  return nested;
+};
+
+const flattenValues = (nested = {}, prefix = '') => {
+  let flat = {};
+  Object.entries(nested).forEach(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      flat = { ...flat, ...flattenValues(value, path) };
+    } else {
+      flat[path] = value;
+    }
+  });
+  return flat;
+};
 
 // --- NEW: Schema Mapper Component ---
 const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, theme }) => {
@@ -161,12 +231,111 @@ const Skeleton = ({ className = '', variant = 'text' }) => {
   return <div className={`${baseClass} ${className}`}></div>;
 };
 
+const StyledSelect = ({ theme, className = '', children, ...props }) => (
+  <div className="relative inline-block">
+    <select
+      {...props}
+      className={`appearance-none pr-8 pl-3 py-2 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        theme === 'dark'
+          ? 'bg-gray-800 border-gray-700 text-white'
+          : 'bg-white border-gray-300 text-gray-700'
+      } ${className}`}
+    >
+      {children}
+    </select>
+    <ChevronDown
+      className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+      }`}
+    />
+  </div>
+);
+
+const HelpModal = ({ onClose, theme }) => (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className={`max-w-3xl w-full max-h-[80vh] overflow-y-auto rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}>
+      <div className={`flex items-center justify-between p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+        <h2 className="text-lg font-semibold">Component Reference</h2>
+        <button onClick={onClose} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="p-4 space-y-6 text-sm">
+        <section>
+          <h3 className="font-medium mb-1">REST API</h3>
+          <p>Invoke external HTTP endpoints using methods like GET or POST.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>method</code>: GET, POST, PUT, DELETE</li>
+            <li><code>headers</code>: HTTP headers object</li>
+            <li><code>query</code>: URL query parameters</li>
+            <li><code>body</code>: JSON payload for write operations</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`fetch('https://api.example.com/users?active=true', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ name: 'Ada' })\n})`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">GraphQL</h3>
+          <p>Execute GraphQL queries or mutations against a GraphQL endpoint.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>endpoint</code>: GraphQL server URL</li>
+            <li><code>query</code>: query or mutation string</li>
+            <li><code>variables</code>: optional variables object</li>
+            <li><code>headers</code>: optional HTTP headers</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`fetch('https://api.example.com/graphql', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    query: '{ items { id name } }',\n    variables: { limit: 10 }\n  })\n})`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Transform</h3>
+          <p>Modify incoming data using operations like rename, flatten, nest or compute.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>rename</code>: change field name <code>from</code> → <code>to</code></li>
+            <li><code>flatten</code>/<code>nest</code>: convert between nested and dot paths</li>
+            <li><code>compute</code>: derive new field from expression</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: { user: { name: 'Ada', age: 30 } }\nTransform: rename user.name -> username, compute isAdult: age > 18\nOutput: { username: 'Ada', age: 30, isAdult: true }`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Filter</h3>
+          <p>Keep records where a field meets a condition.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>field</code>: field to inspect</li>
+            <li><code>operator</code>: &gt;, &lt;, ==, etc.</li>
+            <li><code>value</code>: comparison target</li>
+            <li><code>logic</code>: AND/OR for multiple rules</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ price: 50 }, { price: 150 }]\nFilter: field=price operator='>' value=100\nResult: [{ price: 150 }]`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Aggregate</h3>
+          <p>Combine or summarize data such as merging objects or summing values.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>merge</code>: combine objects</li>
+            <li><code>concat</code>: join arrays</li>
+            <li><code>sum/avg/count</code>: math on field values</li>
+            <li><code>groupBy</code>: bucket items by field</li>
+          </ul>
+          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Input: [{ cat: 'a', val: 1 }, { cat: 'a', val: 2 }]\nAggregate: groupBy=cat sum=val\nResult: { a: 3 }`}</pre>
+        </section>
+        <section>
+          <h3 className="font-medium mb-1">Condition</h3>
+          <p>Branch the workflow based on an expression.</p>
+          <ul className="list-disc ml-6 mt-2">
+            <li><code>expression</code>: boolean logic to evaluate</li>
+            <li><code>trueStep</code>: step run when true</li>
+            <li><code>falseStep</code>: step run when false</li>
+          </ul>
+            <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Condition: user.age > 18\nTrue -> call /adult\nFalse -> call /minor`}</pre>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
 // --- MODAL & PANEL COMPONENTS ---
 
 // Execution Results Panel
 const ExecutionResultsPanel = ({ results, onClose, theme }) => {
   return (
-    <div className={`w-96 border-l ${
+    <div className={`fixed top-0 right-0 h-full w-full sm:w-96 md:w-[28rem] border-l ${
       theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
     } overflow-y-auto`}>
       <div className="p-6">
@@ -322,9 +491,109 @@ const transformConfigToUserFormat = (config) => {
     };
 };
 
+// Generate a minimal OpenAPI specification from current configuration
+const generateApiSpec = (config) => {
+    const paths = {};
+    (config.workflow?.nodes || []).forEach(node => {
+        if (node.type === 'api' || node.type === 'graphql') {
+            const method = (node.data.method || (node.type === 'graphql' ? 'POST' : 'GET')).toLowerCase();
+            const endpoint = node.data.endpoint || '/';
+            paths[endpoint] = paths[endpoint] || {};
+            paths[endpoint][method] = {
+                summary: node.data.label || node.id,
+                responses: { '200': { description: 'Successful response' } }
+            };
+        }
+    });
+    return {
+        openapi: '3.0.0',
+        info: {
+            title: config.name || 'API',
+            version: config.versions?.find(v => v.isCurrent)?.version?.toString() || '1.0.0'
+        },
+        paths
+    };
+};
+
+const ApiSpecModal = ({ config, theme, onClose }) => {
+  const spec = useMemo(() => generateApiSpec(config), [config]);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(JSON.stringify(spec, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className={`max-w-3xl w-full max-h-[80vh] overflow-y-auto rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}>
+        <div className={`flex items-center justify-between p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+          <h2 className="text-lg font-semibold">API Specification</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={handleCopy} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </button>
+            <button onClick={onClose} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <div className="p-4 space-y-6 text-sm">
+          <pre className={`text-xs overflow-x-auto p-2 rounded ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
+            {JSON.stringify(spec, null, 2)}
+          </pre>
+          <section>
+            <h3 className="font-medium mb-1">API Specifications</h3>
+            <p>Browse available APIs with details and code snippets:</p>
+            <ul className="list-disc ml-6 mt-2">
+              <li><code>id</code> &amp; <code>name</code>: identifiers</li>
+              <li><code>endpoint</code>: request URL</li>
+              <li><code>inputSchema</code> / <code>outputSchema</code>: JSON structures</li>
+              <li><code>code snippets</code>: ready-to-use calls</li>
+            </ul>
+            {apiCatalog.restApis.map(api => (
+              <div key={api.id} className="mt-2">
+                <h4 className="font-medium">{api.name}</h4>
+                <p>URL: {api.endpoint}</p>
+                <h5 className="mt-2">Input</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Output</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Code Snippets</h5>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.get('${api.endpoint}', params={'q':'London','key':'YOUR_API_KEY'})`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl '${api.endpoint}?q=London&key=YOUR_API_KEY'`}</pre>
+              </div>
+            ))}
+            {apiCatalog.graphqlApis.map(api => (
+              <div key={api.id} className="mt-6">
+                <h4 className="font-medium">{api.name}</h4>
+                <p>URL: {api.endpoint}</p>
+                <h5 className="mt-2">Input</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Output</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Code Snippets</h5>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.post('${api.endpoint}', json={'query':'${api.query}'})`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl -X POST '${api.endpoint}' -d '{"query":"${api.query}"}'`}</pre>
+              </div>
+            ))}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // JSON Editor Component (MODIFIED to be a read-only view)
-const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
+const JsonEditor = ({ config, theme, onClose, isReadOnly = true, onApply }) => {
   // Generate the user-facing JSON using the transformation logic
   const userFormattedJson = useMemo(() => {
     const formatted = transformConfigToUserFormat(config);
@@ -365,11 +634,30 @@ const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
             Generated JSON Configuration View
           </h3>
           <div className="flex items-center gap-3">
+            {!isReadOnly && onApply && (
+              <button
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(jsonText);
+                    onApply(parsed);
+                  } catch (e) {
+                    alert('Invalid JSON');
+                  }
+                }}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-green-700 hover:bg-green-600 text-white'
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                Apply
+              </button>
+            )}
             <button
                 onClick={copyToClipboard}
                 className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
-                    theme === 'dark' 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                    theme === 'dark'
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
                 }`}
             >
@@ -379,8 +667,8 @@ const JsonEditor = ({ config, theme, onClose, isReadOnly = true }) => {
             <button
               onClick={onClose}
               className={`p-2 rounded-lg transition-colors ${
-                theme === 'dark' 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                theme === 'dark'
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                   : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
               }`}
             >
@@ -622,16 +910,16 @@ const SubscriberDashboard = ({ theme }) => {
     const KpiCard = ({ icon, label, value, unit, iconBgColor }) => {
         const Icon = icon;
         return (
-            <div className={`rounded-lg p-6 shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className={`rounded-lg p-4 shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
-                        <p className={`text-2xl font-bold mt-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {value.toLocaleString()}<span className="text-lg ml-1">{unit}</span>
+                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
+                        <p className={`text-xl font-bold mt-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            {value.toLocaleString()}<span className="text-base ml-1">{unit}</span>
                         </p>
                     </div>
-                    <div className={`p-3 rounded-full ${iconBgColor}`}>
-                      <Icon className="w-6 h-6 text-white" />
+                    <div className={`p-2 rounded-full ${iconBgColor}`}>
+                      <Icon className="w-5 h-5 text-white" />
                     </div>
                 </div>
             </div>
@@ -761,16 +1049,16 @@ const SubscriberDashboard = ({ theme }) => {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                         <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>API Call Metrics</h3>
                         <div className="flex items-center gap-2">
-                            <select
+                            <StyledSelect
+                                theme={theme}
                                 value={selectedApi}
                                 onChange={(e) => setSelectedApi(e.target.value)}
-                                className={`text-sm px-3 py-1.5 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}
                             >
                                 <option value="all">All API Configs</option>
                                 {apiConfigs.map(api => (
                                     <option key={api.id} value={api.id}>{api.name}</option>
                                 ))}
-                            </select>
+                            </StyledSelect>
                             <div className={`flex items-center p-1 rounded-lg ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
                                 {['1d', '7d', '30d'].map(tf => (
                                     <button
@@ -1745,6 +2033,10 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const [activeTab, setActiveTab] = useState('request');
     const [activeCodeLang, setActiveCodeLang] = useState('shell');
     const [copied, setCopied] = useState(false);
+    const [inputMode, setInputMode] = useState('form');
+    const [jsonInput, setJsonInput] = useState('{}');
+    const [executionSteps, setExecutionSteps] = useState([]);
+    const nestedInputSchema = useMemo(() => nestSchema(config.inputSchema || {}), [config.inputSchema]);
 
     useEffect(() => {
         // Initialize input fields with example values from schema
@@ -1755,7 +2047,22 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
             });
         }
         setInputValues(initialInputs);
+        setJsonInput(JSON.stringify(nestValues(initialInputs), null, 2));
     }, [config.inputSchema]);
+
+    const switchToJson = () => {
+        setJsonInput(JSON.stringify(nestValues(inputValues), null, 2));
+        setInputMode('json');
+    };
+
+    const switchToForm = () => {
+        try {
+            setInputValues(flattenValues(JSON.parse(jsonInput || '{}')));
+            setInputMode('form');
+        } catch (e) {
+            showToast('Invalid JSON', 'error');
+        }
+    };
 
     const handleInputChange = (name, value) => {
         setInputValues(prev => ({ ...prev, [name]: value }));
@@ -1764,23 +2071,48 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const handleTestApi = async () => {
         setIsTesting(true);
         setApiResponse(null);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
+        setExecutionSteps([]);
 
-        const mockResponse = {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', 'X-Request-Id': `req_${Date.now()}` },
-            data: {
-                status: "success",
-                data: {
-                    message: `Data retrieved for ${Object.values(inputValues).join(', ')}.`,
-                    ...config.outputSchema
-                }
-            },
-            responseTime: `${Math.floor(Math.random() * 200) + 50}ms`
-        };
+        let payload = inputMode === 'json' ? null : nestValues(inputValues);
+        if (inputMode === 'json') {
+            try {
+                payload = JSON.parse(jsonInput || '{}');
+            } catch (e) {
+                showToast('Invalid JSON input', 'error');
+                setIsTesting(false);
+                return;
+            }
+        }
 
-        setApiResponse(mockResponse);
-        setIsTesting(false);
+        try {
+            const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+                },
+                body: JSON.stringify({ input: payload, config })
+            });
+            const data = await res.json();
+            const steps = data.steps || [];
+            for (const step of steps) {
+                setExecutionSteps(prev => [...prev, { name: step.name || `Step ${prev.length + 1}`, status: 'running' }]);
+                await new Promise(r => setTimeout(r, 500));
+                setExecutionSteps(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, status: 'success' } : s));
+            }
+            setApiResponse({
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+                data,
+                responseTime: data.responseTime || ''
+            });
+            showToast('Request completed', 'success');
+        } catch (err) {
+            setApiResponse({ status: 500, data: { error: err.message } });
+            showToast('Request failed', 'error');
+        } finally {
+            setIsTesting(false);
+        }
     };
 
     const copyToClipboard = (text) => {
@@ -1804,25 +2136,57 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     };
 
     const generateCodeSnippet = useCallback((language) => {
-        const baseUrl = `https://api-builder.dev.naqp.toyota.com/execute/${config.id}`;
+        const baseUrl = `${INTEGRATOR_BASE_URL}/${config.name}`;
         const headers = { 'Authorization': 'Bearer YOUR_API_KEY', 'Content-Type': 'application/json' };
-        const body = JSON.stringify(inputValues, null, 2);
+        let values;
+        try {
+            values = inputMode === 'json' ? JSON.parse(jsonInput || '{}') : nestValues(inputValues);
+        } catch {
+            values = {};
+        }
+        const body = JSON.stringify(values, null, 2);
 
         switch (language) {
             case 'shell':
-                return `curl -X POST '${baseUrl}' \\\n-H 'Authorization: Bearer YOUR_API_KEY' \\\n-H 'Content-Type: application/json' \\\n-d '${JSON.stringify(inputValues)}'`;
+                return `curl -X POST '${baseUrl}' \\\n-H 'Authorization: Bearer YOUR_API_KEY' \\\n-H 'Content-Type: application/json' \\\n-d '${JSON.stringify(values)}'`;
             case 'javascript':
                 return `fetch('${baseUrl}', {\n  method: 'POST',\n  headers: ${JSON.stringify(headers, null, 2)},\n  body: ${body}\n})\n.then(response => response.json())\n.then(data => console.log(data))\n.catch(error => console.error('Error:', error));`;
             case 'typescript':
                 return `import fetch from 'node-fetch';\n\nconst url: string = '${baseUrl}';\n\nconst options: RequestInit = {\n  method: 'POST',\n  headers: {\n    'Authorization': 'Bearer YOUR_API_KEY',\n    'Content-Type': 'application/json'\n  },\n  body: ${body}\n};\n\nasync function callApi() {\n  try {\n    const response = await fetch(url, options);\n    const data = await response.json();\n    console.log(data);\n  } catch (error) {\n    console.error('Error:', error);\n  }\n}\n\ncallApi();`;
             case 'python':
-                return `import requests\nimport json\n\nurl = "${baseUrl}"\nheaders = ${JSON.stringify(headers, null, 2)}\npayload = ${JSON.stringify(inputValues)}\n\nresponse = requests.post(url, headers=headers, data=json.dumps(payload))\n\nprint(response.json())`;
+                return `import requests\nimport json\n\nurl = "${baseUrl}"\nheaders = ${JSON.stringify(headers, null, 2)}\npayload = ${JSON.stringify(values)}\n\nresponse = requests.post(url, headers=headers, data=json.dumps(payload))\n\nprint(response.json())`;
             case 'java':
-                 return `import java.net.URI;\nimport java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\n\npublic class ApiClient {\n    public static void main(String[] args) throws Exception {\n        HttpClient client = HttpClient.newHttpClient();\n        String requestBody = """\n${JSON.stringify(inputValues, null, 4)}\n""";\n\n        HttpRequest request = HttpRequest.newBuilder()\n                .uri(URI.create("${baseUrl}"))\n                .header("Authorization", "Bearer YOUR_API_KEY")\n                .header("Content-Type", "application/json")\n                .POST(HttpRequest.BodyPublishers.ofString(requestBody))\n                .build();\n\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}`;
+                 return `import java.net.URI;\nimport java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\n\npublic class ApiClient {\n    public static void main(String[] args) throws Exception {\n        HttpClient client = HttpClient.newHttpClient();\n        String requestBody = """\n${JSON.stringify(values, null, 4)}\n""";\n\n        HttpRequest request = HttpRequest.newBuilder()\n                .uri(URI.create("${baseUrl}"))\n                .header("Authorization", "Bearer YOUR_API_KEY")\n                .header("Content-Type", "application/json")\n                .POST(HttpRequest.BodyPublishers.ofString(requestBody))\n                .build();\n\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}`;
             default:
                 return '';
         }
-    }, [inputValues, config.id]);
+    }, [inputValues, jsonInput, inputMode, config.id]);
+
+    const renderInputFields = (schema, parentPath = '') => {
+        return Object.entries(schema).map(([key, value]) => {
+            const path = parentPath ? `${parentPath}.${key}` : key;
+            if (value.type === 'object' && value.fields) {
+                return (
+                    <div key={path} className="pl-4">
+                        <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
+                        {renderInputFields(value.fields, path)}
+                    </div>
+                );
+            }
+            return (
+                <div key={path} className="mb-2" style={{ marginLeft: parentPath ? '1rem' : 0 }}>
+                    <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
+                    <input
+                        type="text"
+                        value={inputValues[path] || ''}
+                        placeholder={value.example || ''}
+                        onChange={(e) => handleInputChange(path, e.target.value)}
+                        className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                    />
+                </div>
+            );
+        });
+    };
 
     const renderSchemaTable = (schema) => (
         <div className="overflow-x-auto">
@@ -1868,7 +2232,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                     
                     <h3 className={`text-lg font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>API Endpoint</h3>
                     <pre className={`w-full p-3 rounded-lg text-sm overflow-x-auto mb-6 ${theme === 'dark' ? 'bg-gray-800 text-green-400' : 'bg-gray-100 text-green-700'}`}>
-                        <span className={`font-bold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>POST</span> https://api-builder.dev.naqp.toyota.com/execute/{config.id}
+                        <span className={`font-bold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>POST</span> {`${INTEGRATOR_BASE_URL}/${config.name}`}
                     </pre>
 
                     <h3 className={`text-lg font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Input Schema</h3>
@@ -1893,19 +2257,22 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                         <div className="flex-1 flex flex-col overflow-y-auto">
                             {/* Request Section */}
                             <div className="p-4 sm:p-6 space-y-4">
-                                <h4 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Parameters</h4>
-                                {config.inputSchema && Object.entries(config.inputSchema).map(([key, schema]) => (
-                                    <div key={key}>
-                                        <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
-                                        <input
-                                            type="text"
-                                            value={inputValues[key] || ''}
-                                            placeholder={schema.example || ''}
-                                            onChange={(e) => handleInputChange(key, e.target.value)}
-                                            className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                                        />
+                                <div className="flex items-center justify-between">
+                                    <h4 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Parameters</h4>
+                                    <div className="flex gap-2 text-xs">
+                                        <button onClick={switchToForm} className={inputMode === 'form' ? 'text-blue-500' : ''}>Form</button>
+                                        <button onClick={switchToJson} className={inputMode === 'json' ? 'text-blue-500' : ''}>JSON</button>
                                     </div>
-                                ))}
+                                </div>
+                                {inputMode === 'form' ? (
+                                    renderInputFields(nestedInputSchema)
+                                ) : (
+                                    <textarea
+                                        value={jsonInput}
+                                        onChange={(e) => setJsonInput(e.target.value)}
+                                        className={`w-full h-40 px-3 py-2 rounded-lg border font-mono text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                                    />
+                                )}
                             </div>
                             <div className={`p-4 sm:p-6 border-y ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                                 <button onClick={handleTestApi} disabled={isTesting} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
@@ -1944,6 +2311,19 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                                         <pre className={`w-full p-4 rounded-lg text-sm overflow-x-auto ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-800'}`}>
                                             <code>{JSON.stringify(apiResponse.data, null, 2)}</code>
                                         </pre>
+                                    </div>
+                                )}
+                                {executionSteps.length > 0 && (
+                                    <div className="mt-4">
+                                        <h5 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Execution Steps</h5>
+                                        <ol className="space-y-1">
+                                            {executionSteps.map((step, idx) => (
+                                                <li key={idx} className="text-xs flex items-center gap-2">
+                                                    {step.status === 'success' ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                                    <span>{step.name || `Step ${idx + 1}`}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
                                     </div>
                                 )}
                             </div>
@@ -2166,8 +2546,36 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   const [showUnpublishModal, setShowUnpublishModal] = useState(null);
   const [showCloneModal, setShowCloneModal] = useState(null);
   const permissions = getEnvPermissions(environment);
-  const totalConfigs = configs.length;
-  const totalPublished = configs.filter(c => c.status === 'published').length;
+  const [totalConfigs, setTotalConfigs] = useState(configs.length);
+  const [totalPublished, setTotalPublished] = useState(
+    configs.filter(c => c.status === 'published').length
+  );
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const query = `\n          query ConfigStats {\n            totalConfigs\n            totalPublished\n          }\n        `;
+        const res = await fetch('/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        setTotalConfigs(data.data.totalConfigs);
+        setTotalPublished(data.data.totalPublished);
+      } catch (err) {
+        setTotalConfigs(configs.length);
+        setTotalPublished(configs.filter(c => c.status === 'published').length);
+      }
+    };
+    fetchStats();
+  }, [configs]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, sortBy, configs]);
 
   const handleDeleteClick = (e, config) => {
     e.stopPropagation();
@@ -2226,6 +2634,16 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
     return filtered;
   }, [configs, filter, sortBy]);
 
+  const totalPages = Math.ceil(filteredConfigs.length / itemsPerPage) || 1;
+  const paginatedConfigs = useMemo(
+    () =>
+      filteredConfigs.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+      ),
+    [filteredConfigs, currentPage]
+  );
+
 
   // Builder Dashboard
   return (
@@ -2234,75 +2652,59 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <select
+            <StyledSelect
+              theme={theme}
               value={environment}
               onChange={(e) => onEnvironmentChange(e.target.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                  theme === 'dark'
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-white border-gray-200'
-              } border focus:ring-2 focus:ring-blue-500`}
             >
               <option value="dev">Development</option>
               <option value="qa">QA</option>
               <option value="uat">UAT</option>
               <option value="prod">PROD</option>
-            </select>
+            </StyledSelect>
           </div>
           {/* Filter */}
-          <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className={`px-4 py-2 rounded-lg border ${
-              theme === 'dark'
-                  ? 'bg-gray-800 border-gray-700 text-white' 
-                  : 'bg-white border-gray-200'
-              } focus:ring-2 focus:ring-blue-500`}
+          <StyledSelect
+            theme={theme}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
           >
               <option value="all">All Status</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
-          </select>
+          </StyledSelect>
           
           {/* Sort */}
-          <select
+          <StyledSelect
+            theme={theme}
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className={`px-4 py-2 rounded-lg border ${
-              theme === 'dark' 
-                ? 'bg-gray-800 border-gray-700 text-white' 
-                : 'bg-white border-gray-200'
-            } focus:ring-2 focus:ring-blue-500`}
           >
             <option value="modified">Last Modified</option>
             <option value="name">Name</option>
             <option value="status">Status</option>
-          </select>
+          </StyledSelect>
           {/* Config statistics */}
           <div className="flex gap-6 items-center">
             <div
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+              className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
                 theme === 'dark'
                   ? 'border-blue-500 text-white'
                   : 'border-blue-600 text-gray-900'
               }`}
             >
-              <span className="text-lg font-bold">{totalConfigs}</span>
-              <span className="mt-1 text-center text-[10px] leading-tight">
-                Total Configs
-              </span>
+              <span className="text-xl font-bold">{totalConfigs}</span>
+              <span className="text-xs text-center">Total Configs</span>
             </div>
             <div
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+              className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
                 theme === 'dark'
                   ? 'border-green-500 text-white'
                   : 'border-green-600 text-gray-900'
               }`}
             >
-              <span className="text-lg font-bold">{totalPublished}</span>
-              <span className="mt-1 text-center text-[10px] leading-tight">
-                Published
-              </span>
+              <span className="text-xl font-bold">{totalPublished}</span>
+              <span className="text-xs text-center">Published</span>
             </div>
           </div>
 
@@ -2345,19 +2747,22 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
 
       {/* API Grid/List */}
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredConfigs.map(config => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paginatedConfigs.map(config => (
             <div
               key={config.id}
               onClick={() => onSelectConfig(config, 'view')}
-              className={`relative group flex flex-col rounded-lg shadow-sm border p-6 transition-all cursor-pointer ${
-                theme === 'dark' 
-                  ? 'bg-gray-800 border-gray-700 hover:border-gray-600' 
-                  : 'bg-white border-gray-200 hover:border-gray-300'
+              className={`relative group flex flex-col rounded-xl overflow-hidden p-4 transition-transform cursor-pointer ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:shadow-xl hover:-translate-y-1'
+                  : 'bg-gradient-to-br from-white to-gray-50 border border-gray-200 hover:shadow-xl hover:-translate-y-1'
               }`}
             >
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 opacity-20 rounded-full blur-2xl"></div>
+              </div>
               <div className="flex-1">
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start justify-between mb-3">
                   <h3 className={`font-semibold pr-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     {config.name}
                   </h3>
@@ -2370,7 +2775,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                   </span>
                 </div>
                 
-                <p className={`text-sm mb-4 line-clamp-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                <p className={`text-sm mb-3 line-clamp-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   {config.description || 'No description provided'}
                 </p>
 
@@ -2387,7 +2792,7 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
                 </div>
               </div>
               
-              <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className={`mt-3 pt-3 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
                  <span className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>v{config.versions.find(v => v.isCurrent)?.version}</span>
                    <div className="flex items-center gap-1">
                       <button onClick={(e) => { e.stopPropagation(); onSelectConfig(config, 'view'); }} title="View" className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Eye className="w-4 h-4"/></button>
@@ -2422,27 +2827,27 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
           )}
         </div>
       ) : (
-        <div className={`rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <table className="w-full">
-            <thead className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+        <div className={`rounded-lg border overflow-hidden ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <table className="min-w-full text-sm">
+            <thead className={`${theme === 'dark' ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
               <tr>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Name</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Status</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Version</th>
-                <th className={`text-left px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Applications</th>
-                <th className={`text-right px-6 py-3 text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Actions</th>
+                <th className="text-left px-6 py-3 font-medium">Name</th>
+                <th className="text-left px-6 py-3 font-medium">Status</th>
+                <th className="text-left px-6 py-3 font-medium">Version</th>
+                <th className="text-left px-6 py-3 font-medium">Applications</th>
+                <th className="text-right px-6 py-3 font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {filteredConfigs.map((config, index) => (
-                <tr 
+            <tbody className={`${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'} divide-y`}>
+              {paginatedConfigs.map((config) => (
+                <tr
                   key={config.id}
                   onClick={() => onSelectConfig(config, 'view')}
                   className={`transition-colors cursor-pointer ${
-                    theme === 'dark' 
-                      ? 'hover:bg-gray-700/50 border-gray-700' 
-                      : 'hover:bg-gray-50 border-gray-200'
-                  } ${index < filteredConfigs.length - 1 ? 'border-b' : ''}`}
+                    theme === 'dark'
+                      ? 'hover:bg-gray-700/50'
+                      : 'hover:bg-gray-50'
+                  }`}
                 >
                   <td className={`px-6 py-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     <div>
@@ -2489,21 +2894,53 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
               ))}
             </tbody>
           </table>
-          
+
           {filteredConfigs.length === 0 && (
             <div className={`text-center py-12 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
               <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
               <p className="text-lg mb-2">No API configurations found</p>
               <p className="text-sm">
-                {searchTerm || filter !== 'all' 
-                  ? 'Try adjusting your filters' 
+                {searchTerm || filter !== 'all'
+                  ? 'Try adjusting your filters'
                   : 'Create your first API to get started'}
               </p>
             </div>
           )}
         </div>
       )}
-      
+
+      {filteredConfigs.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+            Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-1 rounded-md border text-sm transition-colors ${
+                theme === 'dark'
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-1 rounded-md border text-sm transition-colors ${
+                theme === 'dark'
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -2604,12 +3041,14 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
 };
 
 // Enhanced API Studio Component
-const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion, onModeChange }) => {
+const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, theme, showToast, mode, onPublish, onUnpublish, onPromote, onMakeVersionActive, onCloneFromVersion, onModeChange, onShowHelp }) => {
   const [activeTab, setActiveTab] = useState('workflow');
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResults, setExecutionResults] = useState(null);
+  const [executionSteps, setExecutionSteps] = useState([]);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [showApiSpec, setShowApiSpec] = useState(false);
   const [testInputs, setTestInputs] = useState({});
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [viewingVersion, setViewingVersion] = useState(null);
@@ -2640,25 +3079,42 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 
 
   const handleSave = () => {
-    // Create a new version
-    const newVersionNumber = (config.versions.length > 0 ? Math.max(...config.versions.map(v => v.version)) : 0) + 1;
-    const newVersion = {
-      id: `v_${Date.now()}`,
-      version: newVersionNumber,
-      createdAt: new Date().toISOString(),
-      description: `Saved changes as v${newVersionNumber}`,
-      content: { 
-        workflow: config.workflow, 
-        inputSchema: config.inputSchema, 
-        outputSchema: config.outputSchema 
-      }
+    const content = {
+      workflow: config.workflow,
+      inputSchema: config.inputSchema,
+      outputSchema: config.outputSchema
     };
 
-    const updatedConfig = {
-      ...config,
-      versions: [...config.versions.map(v => ({ ...v, isCurrent: false })), { ...newVersion, isCurrent: true }],
-      modifiedAt: new Date().toISOString()
-    };
+    let updatedConfig;
+
+    if (config.wasPublished) {
+      const newVersionNumber = (config.versions.length > 0 ? Math.max(...config.versions.map(v => v.version)) : 0) + 1;
+      const newVersion = {
+        id: `v_${Date.now()}`,
+        version: newVersionNumber,
+        createdAt: new Date().toISOString(),
+        description: `Saved changes as v${newVersionNumber}`,
+        content
+      };
+      updatedConfig = {
+        ...config,
+        versions: [
+          ...config.versions.map(v => ({ ...v, isCurrent: false })),
+          { ...newVersion, isCurrent: true }
+        ],
+        modifiedAt: new Date().toISOString()
+      };
+    } else {
+      const updatedVersions = config.versions.map(v =>
+        v.isCurrent ? { ...v, content } : v
+      );
+      updatedConfig = {
+        ...config,
+        versions: updatedVersions,
+        modifiedAt: new Date().toISOString()
+      };
+    }
+
     onUpdate(updatedConfig);
     showToast('API configuration saved', 'success');
   };
@@ -2678,90 +3134,30 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const handleExecuteWorkflow = async () => {
     setIsExecuting(true);
     setExecutionResults(null);
-    
-    // Simulate workflow execution with animations
-    const nodes = [...config.workflow.nodes];
-    const results = {};
-    
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      
-      // Update node status to running
-      let updatedNodes = config.workflow.nodes.map(n => 
-        n.id === node.id ? { ...n, data: { ...n.data, status: 'running' } } : n
-      );
-      
-      // Animate edges
-      let updatedEdges = config.workflow.edges.map(e => ({
-        ...e,
-        animated: e.target === node.id
-      }));
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: updatedNodes, edges: updatedEdges }
+    setExecutionSteps([]);
+    try {
+      const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+        },
+        body: JSON.stringify({ input: testInputs, config })
       });
-      
-      // Simulate node execution
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate mock result for the node
-      if (node.type === 'api' || node.type === 'graphql') {
-        results[node.id] = {
-          status: 'success',
-          data: {
-            temperature: 22,
-            location: { name: 'New York', country: 'USA' },
-            forecast: [
-              { day: 'Today', temp: 22, condition: 'Sunny' },
-              { day: 'Tomorrow', temp: 20, condition: 'Cloudy' }
-            ]
-          },
-          responseTime: Math.floor(Math.random() * 300) + 100
-        };
-      } else if (node.type === 'transform') {
-        results[node.id] = {
-          status: 'success',
-          data: {
-            temperature: 22,
-            loc_name: 'New York',
-            loc_country: 'USA'
-          },
-          transformations: node.data.transformations?.length || 0
-        };
+      const data = await res.json();
+      const steps = data.steps || [];
+      for (const step of steps) {
+        setExecutionSteps(prev => [...prev, { name: step.name || `Step ${prev.length + 1}`, status: 'running' }]);
+        await new Promise(r => setTimeout(r, 500));
+        setExecutionSteps(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, status: 'success' } : s));
       }
-      
-      // Update node status to completed
-      const completedNodes = updatedNodes.map(n => 
-        n.id === node.id ? { ...n, data: { ...n.data, status: 'completed' } } : n
-      );
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: completedNodes, edges: updatedEdges }
-      });
+      setExecutionResults({ result: { status: 'success', data: data.output || data } });
+      showToast('Workflow executed successfully', 'success');
+    } catch (err) {
+      showToast('Workflow execution failed', 'error');
+    } finally {
+      setIsExecuting(false);
     }
-    
-    // Reset animations and statuses
-    setTimeout(() => {
-      const resetNodes = config.workflow.nodes.map(n => ({
-        ...n,
-        data: { ...n.data, status: 'idle' }
-      }));
-      const resetEdges = config.workflow.edges.map(e => ({
-        ...e,
-        animated: false
-      }));
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: resetNodes, edges: resetEdges }
-      });
-    }, 2000);
-    
-    setExecutionResults(results);
-    setIsExecuting(false);
-    showToast('Workflow executed successfully', 'success');
   };
   
     const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
@@ -2869,7 +3265,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <button
               onClick={() => setShowJsonEditor(!showJsonEditor)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
@@ -2906,108 +3302,128 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
               </button>
             )}
 
-              <div className="relative">
-                <button
-                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
-                    theme === 'dark'
-                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                  } ${
-                    viewingVersion && viewingVersion.id !== currentVersion?.id
-                      ? theme === 'dark'
-                        ? 'bg-yellow-900 border-yellow-700 text-yellow-300'
-                        : 'bg-yellow-100 border-yellow-300 text-yellow-800'
-                      : ''
-                  }`}
-                >
-                  <FileStack className="w-4 h-4" />
-                  {viewingVersion ? `v${viewingVersion.version}` : 'Versions'}
-                </button>
-                {showVersionDropdown && (
-                  <VersionDropdown
-                    config={config}
-                    theme={theme}
-                    onClose={() => setShowVersionDropdown(false)}
-                    onSelectVersion={setViewingVersion}
-                    viewingVersion={viewingVersion}
-                    onCloneVersion={(version) => { setShowVersionDropdown(false); setCloningVersion(version); }}
-                    onMakeActive={(versionId) => { setShowVersionDropdown(false); onMakeVersionActive(versionId); }}
-                    environment={environment}
-                  />
-                )}
-              </div>
-              {viewingVersion && (
-                <span
-                  className={`text-xs px-2 py-0.5 rounded border ${
-                    viewingVersion.id === currentVersion?.id
-                      ? theme === 'dark'
-                        ? 'border-green-700 text-green-300'
-                        : 'border-green-300 text-green-700'
-                      : theme === 'dark'
-                        ? 'border-yellow-700 text-yellow-300'
-                        : 'border-yellow-300 text-yellow-800'
-                  }`}
-                >
-                  Viewing v{viewingVersion.version}
-                  {viewingVersion.id === currentVersion?.id ? '' : ' (not active)'}
-                </span>
+            <div className="relative">
+              <button
+                onClick={() => setShowVersionDropdown(!showVersionDropdown)}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                  theme === 'dark'
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                } ${
+                  viewingVersion && viewingVersion.id !== currentVersion?.id
+                    ? theme === 'dark'
+                      ? 'bg-yellow-900 border-yellow-700 text-yellow-300'
+                      : 'bg-yellow-100 border-yellow-300 text-yellow-800'
+                    : ''
+                }`}
+              >
+                <FileStack className="w-4 h-4" />
+                {viewingVersion ? `v${viewingVersion.version}` : 'Versions'}
+              </button>
+              {showVersionDropdown && (
+                <VersionDropdown
+                  config={config}
+                  theme={theme}
+                  onClose={() => setShowVersionDropdown(false)}
+                  onSelectVersion={setViewingVersion}
+                  viewingVersion={viewingVersion}
+                  onCloneVersion={(version) => { setShowVersionDropdown(false); setCloningVersion(version); }}
+                  onMakeActive={(versionId) => { setShowVersionDropdown(false); onMakeVersionActive(versionId); }}
+                  environment={environment}
+                />
+              )}
+            </div>
+            {viewingVersion && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded border ${
+                  viewingVersion.id === currentVersion?.id
+                    ? theme === 'dark'
+                      ? 'border-green-700 text-green-300'
+                      : 'border-green-300 text-green-700'
+                    : theme === 'dark'
+                      ? 'border-yellow-700 text-yellow-300'
+                      : 'border-yellow-300 text-yellow-800'
+                }`}
+              >
+                Viewing v{viewingVersion.version}
+                {viewingVersion.id === currentVersion?.id ? '' : ' (not active)'}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2 ml-auto">
+              {permissions.allowEdit ? (
+                <>
+                  <button
+                    onClick={handleExecuteWorkflow}
+                    disabled={isExecuting}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    Execute
+                  </button>
+
+                  {!isReadOnly && (
+                    <button
+                      onClick={handleSave}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      Save
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handlePublishToggle}
+                    title={config.status === 'published' ? 'Unpublish to make changes' : 'Publish API'}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      config.status === 'published'
+                        ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                        : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
+                    }`}
+                  >
+                    {config.status === 'published' ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
+                    {config.status === 'published' ? 'Unpublish' : 'Publish'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowPromoteModal(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <GitMerge className="w-4 h-4" />
+                    Promote
+                  </button>
+                  {config.environments[environment]?.promotedVersionId && (
+                    <button
+                      onClick={handleDepromote}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-orange-600 hover:bg-orange-700 text-white"
+                    >
+                      <GitBranch className="w-4 h-4" />
+                      Depromote
+                    </button>
+                  )}
+                </>
               )}
 
-            {permissions.allowEdit ? (
-                <>
-                    <button
-                        onClick={handleExecuteWorkflow}
-                        disabled={isExecuting}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                    >
-                        {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                        Execute
-                    </button>
+              <button
+                onClick={() => setShowApiSpec(true)}
+                className={`p-2 rounded-lg transition-colors ${
+                  theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <FileCode className="w-5 h-5" />
+              </button>
 
-                    {!isReadOnly && (
-                        <button
-                            onClick={handleSave}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                        >
-                            <Save className="w-4 h-4" />
-                            Save
-                        </button>
-                    )}
-
-                    <button
-                        onClick={handlePublishToggle}
-                        title={config.status === 'published' ? "Unpublish to make changes" : "Publish API"}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                            config.status === 'published'
-                            ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                            : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
-                        }`}
-                    >
-                        {config.status === 'published' ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
-                        {config.status === 'published' ? 'Unpublish' : 'Publish'}
-                    </button>
-                </>
-            ) : (
-                <>
-                    <button
-                        onClick={() => setShowPromoteModal(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                        <GitMerge className="w-4 h-4" />
-                        Promote
-                    </button>
-                    {config.environments[environment]?.promotedVersionId && (
-                        <button
-                            onClick={handleDepromote}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors bg-orange-600 hover:bg-orange-700 text-white"
-                        >
-                            <GitBranch className="w-4 h-4" />
-                            Depromote
-                        </button>
-                    )}
-                </>
-            )}
+              <button
+                onClick={onShowHelp}
+                className={`p-2 rounded-lg transition-colors ${
+                  theme === 'dark' ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -3019,6 +3435,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           environment={environment}
           theme={theme}
           executionResults={executionResults}
+          executionSteps={executionSteps}
           onCloseExecutionResults={() => setExecutionResults(null)}
           testInputs={testInputs}
           onUpdateTestInputs={setTestInputs}
@@ -3034,9 +3451,18 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           theme={theme}
           onClose={() => setShowJsonEditor(false)}
           isReadOnly={isReadOnly}
+          onApply={(updated) => { onUpdate(updated); setShowJsonEditor(false); }}
         />
       )}
-      
+
+      {showApiSpec && (
+        <ApiSpecModal
+          config={viewingVersion ? { ...config, ...viewingVersion.content } : config}
+          theme={theme}
+          onClose={() => setShowApiSpec(false)}
+        />
+      )}
+
       {showPromoteModal && (
         <PromoteModal
           config={config}
@@ -3059,7 +3485,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 };
 
 // Enhanced Workflow Designer Component
-const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResults, onCloseExecutionResults, testInputs, onUpdateTestInputs, showToast, isReadOnly }) => {
+const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResults, executionSteps, onCloseExecutionResults, testInputs, onUpdateTestInputs, showToast, isReadOnly }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [draggingNode, setDraggingNode] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
@@ -3067,6 +3493,7 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const dragStartPos = useRef(null);
   const canvasRef = useRef(null);
   
   const nodeTypes = [
@@ -3116,6 +3543,58 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
     const newY = (canvasRect.height - contentHeight * newZoom) / 2 - minY * newZoom;
 
     setView({ x: newX, y: newY, zoom: newZoom });
+  };
+
+  const handleBeautify = () => {
+    if (!config.workflow?.nodes) return;
+
+    const nodes = config.workflow.nodes;
+    const edges = config.workflow.edges || [];
+
+    const spacingX = 220;
+    const spacingY = 120;
+
+    const adjacency = {};
+    edges.forEach(e => {
+      adjacency[e.source] = adjacency[e.source] || [];
+      adjacency[e.source].push(e.target);
+    });
+
+    const startNode = nodes.find(n => n.type === 'start') || nodes[0];
+    const levels = {};
+    const queue = [startNode.id];
+    levels[startNode.id] = 0;
+    while (queue.length) {
+      const id = queue.shift();
+      (adjacency[id] || []).forEach(t => {
+        if (levels[t] == null) {
+          levels[t] = levels[id] + 1;
+          queue.push(t);
+        }
+      });
+    }
+
+    const grouped = {};
+    nodes.forEach(n => {
+      const lvl = levels[n.id] ?? 0;
+      grouped[lvl] = grouped[lvl] || [];
+      grouped[lvl].push(n);
+    });
+
+    const positioned = nodes.map(n => {
+      const lvl = levels[n.id] ?? 0;
+      const idx = grouped[lvl].indexOf(n);
+      return {
+        ...n,
+        position: {
+          x: lvl * spacingX,
+          y: idx * spacingY
+        }
+      };
+    });
+
+    onUpdate({ ...config, workflow: { ...config.workflow, nodes: positioned } });
+    setTimeout(() => handleFitToScreen(), 0);
   };
   
   const handleDragStart = (e, nodeType) => {
@@ -3513,13 +3992,20 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
                       }}
                       onMouseDown={(e) => {
                         if (!e.target.closest('.node-action') && !isReadOnly) {
-                          setSelectedNode(node);
+                          dragStartPos.current = { x: e.clientX, y: e.clientY };
                           handleNodeDragStart(node.id, e);
                         }
                       }}
                       onMouseUp={(e) => {
                         if (connectingFrom && connectingFrom.nodeId !== node.id) {
                             handleNodeConnect(connectingFrom.nodeId, node.id);
+                        }
+                        if (!isReadOnly && dragStartPos.current) {
+                          const dx = Math.abs(e.clientX - dragStartPos.current.x);
+                          const dy = Math.abs(e.clientY - dragStartPos.current.y);
+                          if (dx < 5 && dy < 5) {
+                            setSelectedNode(node);
+                          }
                         }
                       }}
                     >
@@ -3623,30 +4109,52 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
                   );
                 })}
             </div>
+        </div>
+        {executionSteps.length > 0 && (
+          <div className={`absolute top-4 right-4 p-4 rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+            <h4 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Execution Progress</h4>
+            <ol className="space-y-1">
+              {executionSteps.map((step, idx) => (
+                <li key={idx} className="text-xs flex items-center gap-2">
+                  {step.status === 'success' ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                  <span>{step.name}</span>
+                </li>
+              ))}
+            </ol>
           </div>
-           {/* Zoom Controls */}
+        )}
+          {/* Zoom Controls */}
            <div className="absolute bottom-4 right-4 flex items-center gap-1">
                 <button onClick={() => handleZoom('out')} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ZoomOut className="w-5 h-5" /></button>
                 <button onClick={handleFitToScreen} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Maximize2 className="w-5 h-5" /></button>
+                <button onClick={handleBeautify} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Sparkles className="w-5 h-5" /></button>
                 <button onClick={() => handleZoom('in')} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ZoomIn className="w-5 h-5" /></button>
             </div>
         </div>
         
         {/* Properties Panel */}
-        {selectedNode && selectedNode.type !== 'start' && selectedNode.type !== 'end' && (
+        {selectedNode && selectedNode.type !== 'end' && (
           <NodePropertiesPanel
             node={selectedNode}
-            onUpdate={(updatedNode) => {
-              const updatedNodes = (config.workflow?.nodes || []).map(n =>
-                n.id === updatedNode.id ? updatedNode : n
-              );
-              onUpdate({
-                ...config,
-                workflow: {
-                  ...config.workflow,
-                  nodes: updatedNodes
-                }
-              });
+            environment={environment}
+            onUpdate={(updated) => {
+              if (selectedNode.type === 'start') {
+                onUpdate({
+                  ...config,
+                  inputSchema: updated
+                });
+              } else {
+                const updatedNodes = (config.workflow?.nodes || []).map(n =>
+                  n.id === updated.id ? updated : n
+                );
+                onUpdate({
+                  ...config,
+                  workflow: {
+                    ...config.workflow,
+                    nodes: updatedNodes
+                  }
+                });
+              }
             }}
             onClose={() => setSelectedNode(null)}
             theme={theme}
@@ -3670,55 +4178,336 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
 };
 
 // Enhanced Node Properties Panel
-const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config, isReadOnly }) => {
+const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config, isReadOnly, environment }) => {
   const [testResponse, setTestResponse] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
+  const [schemaMode, setSchemaMode] = useState('form');
+  const [localSchema, setLocalSchema] = useState({});
+  const [schemaJson, setSchemaJson] = useState('{}');
+  const [panelWidth, setPanelWidth] = useState(448);
+  const resizingRef = useRef(false);
 
-  const handleTestApi = async () => {
-    setIsTesting(true);
-    
-    // Simulate API test
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const mockResponse = {
-      status: 200,
-      data: {
-        current: {
-          temp_c: 22,
-          condition: { text: 'Sunny' },
-          humidity: 65
-        },
-        location: {
-          name: 'London',
-          country: 'United Kingdom',
-          lat: 51.52,
-          lon: -0.11
-        },
-        forecast: {
-          forecastday: [
-            { date: '2024-01-20', day: { maxtemp_c: 23, mintemp_c: 15 } },
-            { date: '2024-01-21', day: { maxtemp_c: 21, mintemp_c: 14 } }
-          ]
-        }
-      }
+  const startResize = (e) => {
+    resizingRef.current = true;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!resizingRef.current) return;
+      const newWidth = Math.min(Math.max(300, window.innerWidth - e.clientX), 800);
+      setPanelWidth(newWidth);
     };
-    
-    setTestResponse(mockResponse);
-    setIsTesting(false);
-    showToast('API test successful', 'success');
-    
-    // Auto-detect schema
-    if (node.type === 'api' || node.type === 'graphql') {
-      onUpdate({
-        ...node,
-        data: {
-          ...node.data,
-          responseSchema: extractSchema(mockResponse.data)
+    const stopResize = () => {
+      resizingRef.current = false;
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', stopResize);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', stopResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nested = nestSchema(config.inputSchema || {});
+    setLocalSchema(nested);
+    setSchemaJson(JSON.stringify(nested, null, 2));
+  }, [config.inputSchema]);
+
+  if (node.type === 'start') {
+    const updateSchema = (updater) => {
+      setLocalSchema(prev => {
+        const copy = JSON.parse(JSON.stringify(prev));
+        updater(copy);
+        onUpdate(flattenSchema(copy));
+        setSchemaJson(JSON.stringify(copy, null, 2));
+        return copy;
+      });
+    };
+
+    const handleFieldNameChange = (pathArr, newName) => {
+      updateSchema(schema => {
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => {
+          if (key === 'items') return acc.items.fields;
+          return acc[key].fields;
+        }, schema);
+        const field = parent[pathArr[pathArr.length - 1]];
+        delete parent[pathArr[pathArr.length - 1]];
+        parent[newName] = field;
+      });
+    };
+
+    const handleTypeChange = (pathArr, newType) => {
+      updateSchema(schema => {
+        const field = pathArr.reduce((acc, key, idx) => {
+          return idx === pathArr.length - 1 ? acc[key] : acc[key].fields;
+        }, schema);
+        field.type = newType;
+        if (newType === 'object') {
+          field.fields = field.fields || {};
+          delete field.items;
+        } else if (newType === 'array') {
+          field.items = field.items || { type: 'string' };
+          delete field.fields;
+        } else {
+          delete field.fields;
+          delete field.items;
         }
       });
-    }
-  };
+    };
+
+    const handleItemTypeChange = (pathArr, newType) => {
+      updateSchema(schema => {
+        const field = pathArr.reduce((acc, key, idx) => {
+          return idx === pathArr.length - 1 ? acc[key] : acc[key].fields;
+        }, schema);
+        field.items = field.items || {};
+        field.items.type = newType;
+        if (newType === 'object') {
+          field.items.fields = field.items.fields || {};
+        } else {
+          delete field.items.fields;
+        }
+      });
+    };
+
+    const handleDelete = (pathArr) => {
+      updateSchema(schema => {
+        const parent = pathArr.slice(0, -1).reduce((acc, key) => {
+          if (key === 'items') return acc.items.fields;
+          return acc[key].fields;
+        }, schema);
+        delete parent[pathArr[pathArr.length - 1]];
+      });
+    };
+
+    const handleAddField = (pathArr) => {
+      updateSchema(schema => {
+        const parent = pathArr.reduce((acc, key) => {
+          if (!key) return acc;
+          if (key === 'items') {
+            acc.items = acc.items || { type: 'object', fields: {} };
+            acc.items.fields = acc.items.fields || {};
+            return acc.items.fields;
+          }
+          acc[key] = acc[key] || { type: 'object', fields: {} };
+          acc[key].fields = acc[key].fields || {};
+          return acc[key].fields;
+        }, schema);
+        let idx = 1;
+        let fieldName;
+        do {
+          fieldName = `field_${idx++}`;
+        } while (parent[fieldName]);
+        parent[fieldName] = { type: 'string' };
+      });
+    };
+
+    const renderFields = (schema, path = []) => (
+      Object.entries(schema).map(([key, value]) => {
+        const currentPath = [...path, key];
+        const level = path.length;
+        return (
+          <div key={currentPath.join('.')} className="space-y-1">
+            <div className="flex items-center gap-2" style={{ marginLeft: level * 12 }}>
+              <input
+                type="text"
+                value={key}
+                readOnly={isReadOnly}
+                onChange={(e) => handleFieldNameChange(currentPath, e.target.value)}
+                className={`flex-1 px-2 py-1 text-sm rounded border ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              />
+              <select
+                value={value.type || 'string'}
+                disabled={isReadOnly}
+                onChange={(e) => handleTypeChange(currentPath, e.target.value)}
+                className={`px-2 py-1 text-sm rounded border ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              >
+                <option value="string">string</option>
+                <option value="number">number</option>
+                <option value="boolean">boolean</option>
+                <option value="object">object</option>
+                <option value="array">array</option>
+              </select>
+              {value.type === 'array' && (
+                <select
+                  value={value.items?.type || 'string'}
+                  disabled={isReadOnly}
+                  onChange={(e) => handleItemTypeChange(currentPath, e.target.value)}
+                  className={`px-2 py-1 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300'
+                  } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                >
+                  <option value="string">string</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                  <option value="object">object</option>
+                </select>
+              )}
+              {!isReadOnly && (
+                <button onClick={() => handleDelete(currentPath)} className="text-red-500 hover:text-red-600">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {value.type === 'object' && !isReadOnly && (
+                <button onClick={() => handleAddField(currentPath)} className="text-xs px-1">
+                  + Field
+                </button>
+              )}
+              {value.type === 'array' && value.items?.type === 'object' && !isReadOnly && (
+                <button onClick={() => handleAddField([...currentPath, 'items'])} className="text-xs px-1">
+                  + Field
+                </button>
+              )}
+            </div>
+            {value.type === 'object' && value.fields && renderFields(value.fields, currentPath)}
+            {value.type === 'array' && value.items?.type === 'object' && value.items.fields && (
+              renderFields(value.items.fields, [...currentPath, 'items'])
+            )}
+          </div>
+        );
+      })
+    );
+
+    const ensureObjectFields = (schema) => {
+      Object.values(schema).forEach(field => {
+        if (field.type === 'object') {
+          field.fields = field.fields || {};
+          ensureObjectFields(field.fields);
+        } else if (field.type === 'array' && field.items?.type === 'object') {
+          field.items.fields = field.items.fields || {};
+          ensureObjectFields(field.items.fields);
+        }
+      });
+    };
+
+    const applyJson = () => {
+      try {
+        const parsed = JSON.parse(schemaJson || '{}');
+        ensureObjectFields(parsed);
+        setLocalSchema(parsed);
+        onUpdate(flattenSchema(parsed));
+      } catch (e) {
+        showToast('Invalid JSON', 'error');
+      }
+    };
+
+    return (
+      <div
+        className={`fixed top-0 right-0 h-full border-l ${
+          theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        } overflow-y-auto`}
+        style={{ width: panelWidth }}
+      >
+        <div
+          className="absolute left-0 top-0 h-full w-1 cursor-ew-resize"
+          onMouseDown={startResize}
+        />
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Input Structure</h3>
+            <div className="flex gap-2 text-xs">
+              <button onClick={() => setSchemaMode('form')} className={schemaMode === 'form' ? 'text-blue-500' : ''}>Form</button>
+              <button onClick={() => setSchemaMode('json')} className={schemaMode === 'json' ? 'text-blue-500' : ''}>JSON</button>
+            </div>
+            <button
+              onClick={onClose}
+              className={`p-1 rounded transition-colors ${
+                theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+              }`}
+            >
+              <X className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+            </button>
+          </div>
+
+          {schemaMode === 'form' ? (
+            <div className="space-y-2">
+              {renderFields(localSchema)}
+              {!isReadOnly && (
+                <button
+                  onClick={() => handleAddField([])}
+                  className={`px-2 py-1 text-sm rounded border w-full text-left ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-gray-300'
+                      : 'bg-white border-gray-300 text-gray-700'
+                  }`}
+                >
+                  + Add Field
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={schemaJson}
+                onChange={(e) => setSchemaJson(e.target.value)}
+                className={`w-full h-40 px-3 py-2 rounded-lg border font-mono text-sm ${
+                  theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                }`}
+                readOnly={isReadOnly}
+              />
+              {!isReadOnly && (
+                <button
+                  onClick={applyJson}
+                  className={`px-2 py-1 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-gray-300'
+                      : 'bg-white border-gray-300 text-gray-700'
+                  }`}
+                >
+                  Apply
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+    const handleTestApi = async () => {
+      setIsTesting(true);
+      setTestResponse(null);
+      try {
+        const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+          },
+          body: JSON.stringify({ config, nodeId: node.id })
+        });
+        const data = await res.json();
+        setTestResponse({ status: res.status, data });
+        showToast('API test successful', 'success');
+        if (node.type === 'api' || node.type === 'graphql') {
+          onUpdate({
+            ...node,
+            data: {
+              ...node.data,
+              responseSchema: extractSchema(data)
+            }
+          });
+        }
+      } catch (err) {
+        setTestResponse({ status: 500, data: { error: err.message } });
+        showToast('API test failed', 'error');
+      } finally {
+        setIsTesting(false);
+      }
+    };
   
   const extractSchema = (data, path = '') => {
     const schema = {};
@@ -3819,11 +4608,21 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
         "location.country": { type: "string" },
     };
   };
+
+  const availableFields = Object.keys(getSourceSchemaForTransform());
+  const fieldOptionsId = `field-options-${node.id}`;
   
-  return (
-    <div className={`w-96 border-l ${
-      theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-    } overflow-y-auto`}>
+    return (
+      <div
+        className={`fixed top-0 right-0 h-full border-l ${
+          theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        } overflow-y-auto`}
+        style={{ width: panelWidth }}
+      >
+      <div
+        className="absolute left-0 top-0 h-full w-1 cursor-ew-resize"
+        onMouseDown={startResize}
+      />
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -3861,6 +4660,11 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
             />
         ) : (
         <div className="space-y-4">
+          <datalist id={fieldOptionsId}>
+            {availableFields.map(f => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
           <div>
             <label className={`block text-sm font-medium mb-1 ${
               theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
@@ -3882,7 +4686,51 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
               } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
             />
           </div>
-          
+
+          {(node.type === 'api' || node.type === 'graphql') && (
+            <div>
+              <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+              }`}>
+                Predefined {node.type === 'api' ? 'REST' : 'GraphQL'} API
+              </label>
+              <select
+                value={node.data.predefinedId || ''}
+                disabled={isReadOnly}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) {
+                    onUpdate({ ...node, data: { ...node.data, predefinedId: '' } });
+                    return;
+                  }
+                  const catalog = node.type === 'api' ? apiCatalog.restApis : apiCatalog.graphqlApis;
+                  const api = catalog.find(a => a.id === id);
+                  if (api) {
+                    onUpdate({
+                      ...node,
+                      data: {
+                        ...node.data,
+                        predefinedId: id,
+                        method: api.method || node.data.method,
+                        endpoint: api.environments ? (api.environments[environment] || api.endpoint) : api.endpoint,
+                        query: api.query || node.data.query,
+                        authentication: api.auth || node.data.authentication
+                      }
+                    });
+                  }
+                }}
+                className={`w-full px-3 py-2 rounded-lg border ${
+                  theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              >
+                <option value="">Custom</option>
+                {(node.type === 'api' ? apiCatalog.restApis : apiCatalog.graphqlApis).map(api => (
+                  <option key={api.id} value={api.id}>{api.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* API/GraphQL Configuration */}
           {(node.type === 'api' || node.type === 'graphql') && (
             <>
@@ -4106,7 +4954,7 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     {/* Transformation Config */}
                     {transform.type === 'rename' && (
                       <div className="grid grid-cols-2 gap-2">
-                        <input type="text" placeholder="From field" value={transform.config.from || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, from: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
+                        <input type="text" list={fieldOptionsId} placeholder="From field" value={transform.config.from || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, from: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
                         <input type="text" placeholder="To field" value={transform.config.to || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, to: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
                       </div>
                     )}
@@ -4122,24 +4970,44 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
 
           {/* Filter Configuration */}
           {node.type === 'filter' && (
-            <div>
+            <div className="space-y-2">
                 <label className={`block text-sm font-medium mb-1 ${
                 theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
                 }`}>
-                Filter Condition
+                Field
                 </label>
-                <textarea
-                value={node.data.filterCondition || ''}
+                <input
+                type="text"
+                list={fieldOptionsId}
+                value={node.data.field || ''}
                 readOnly={isReadOnly}
                 onChange={(e) => onUpdate({
                     ...node,
-                    data: { ...node.data, filterCondition: e.target.value }
+                    data: { ...node.data, field: e.target.value }
                 })}
-                placeholder="e.g., item.price > 100 && item.category === 'electronics'"
-                rows={3}
+                className={`w-full px-3 py-2 rounded-lg border ${
+                    theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                />
+                <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                Condition
+                </label>
+                <input
+                type="text"
+                value={node.data.condition || ''}
+                readOnly={isReadOnly}
+                onChange={(e) => onUpdate({
+                    ...node,
+                    data: { ...node.data, condition: e.target.value }
+                })}
+                placeholder="e.g., > 100"
                 className={`w-full px-3 py-2 rounded-lg border font-mono text-sm ${
-                    theme === 'dark' 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
+                    theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                     : 'bg-white border-gray-300'
                 } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                 />
@@ -4163,8 +5031,8 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     data: { ...node.data, aggregationType: e.target.value }
                     })}
                     className={`w-full px-3 py-2 rounded-lg border ${
-                    theme === 'dark' 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                    theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300'
                     } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
                 >
@@ -4176,8 +5044,63 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                     <option value="group">Group By Field</option>
                 </select>
                 </div>
+                {['sum','average','count','group'].includes(node.data.aggregationType) && (
+                  <div className="mt-2">
+                    <label className={`block text-sm font-medium mb-1 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Field
+                    </label>
+                    <input
+                      type="text"
+                      list={fieldOptionsId}
+                      value={node.data.field || ''}
+                      readOnly={isReadOnly}
+                      onChange={(e) => onUpdate({
+                        ...node,
+                        data: { ...node.data, field: e.target.value }
+                      })}
+                      className={`w-full px-3 py-2 rounded-lg border ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300'
+                      } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                    />
+                  </div>
+                )}
             </>
             )}
+
+          {node.type === 'condition' && (
+            <div>
+              <label className={`block text-sm font-medium mb-1 ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+              }`}>
+                Condition Expression
+              </label>
+              <input
+                type="text"
+                list={fieldOptionsId}
+                value={node.data.condition || ''}
+                readOnly={isReadOnly}
+                onChange={(e) => onUpdate({
+                  ...node,
+                  data: { ...node.data, condition: e.target.value }
+                })}
+                placeholder="e.g., user.age > 18"
+                className={`w-full px-3 py-2 rounded-lg border font-mono text-sm ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300'
+                } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              />
+              <p className={`text-xs mt-1 ${
+                theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+              }`}>
+                True branch follows the 'Yes' connection.
+              </p>
+            </div>
+          )}
 
         </div>
         )}
@@ -4204,6 +5127,7 @@ const App = () => {
   ]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
   
@@ -4252,6 +5176,7 @@ const App = () => {
         description: 'Fetches weather data and transforms it for dashboard display.',
         version: '1.0.0',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['weather', 'rest', 'transform'],
@@ -4326,6 +5251,7 @@ const App = () => {
         description: 'Combines user data from multiple sources with advanced transformations.',
         version: '2.1.0',
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['graphql', 'aggregation', 'multi-api'],
@@ -4398,6 +5324,7 @@ const App = () => {
         description: 'Provides access to product catalog, inventory, and pricing information for an e-commerce platform.',
         version: '1.2.0',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['products', 'e-commerce', 'inventory'],
@@ -4426,6 +5353,7 @@ const App = () => {
         description: 'Draft API for posting updates to multiple social media platforms.',
         version: '0.5.0',
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['social', 'automation', 'draft'],
@@ -4449,6 +5377,7 @@ const App = () => {
         description: 'Handles credit card processing and transaction logging. High reliability.',
         version: '3.0.1',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['payment', 'transactions', 'secure'],
@@ -4488,6 +5417,7 @@ const App = () => {
       description: '',
       version: '1.0.0',
       status: 'draft',
+      wasPublished: false,
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
       tags: [],
@@ -4544,6 +5474,7 @@ const App = () => {
             id: `api_${Date.now()}`,
             name: newName,
             status: 'draft',
+            wasPublished: false,
             createdAt: new Date().toISOString(),
             modifiedAt: new Date().toISOString(),
             applications: [newApp], // Set the selected app
@@ -4578,6 +5509,7 @@ const App = () => {
         id: `api_${Date.now()}`,
         name: newName,
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
         applications: [newApp],
@@ -4612,11 +5544,11 @@ const App = () => {
   };
 
   const handlePublish = (configId) => {
-      setConfigs(prevConfigs => prevConfigs.map(c => 
-          c.id === configId ? { ...c, status: 'published', modifiedAt: new Date().toISOString() } : c
+      setConfigs(prevConfigs => prevConfigs.map(c =>
+          c.id === configId ? { ...c, status: 'published', wasPublished: true, modifiedAt: new Date().toISOString() } : c
       ));
       if (selectedConfig?.id === configId) {
-          setSelectedConfig(prev => ({...prev, status: 'published'}));
+          setSelectedConfig(prev => ({...prev, status: 'published', wasPublished: true}));
           setStudioMode('view');
       }
       showToast('API published successfully', 'success');
@@ -4763,6 +5695,7 @@ const App = () => {
             environment={environment}
             theme={theme}
             showToast={showToast}
+            onShowHelp={() => setShowHelp(true)}
           />
         ) : null;
       
@@ -4892,10 +5825,10 @@ const App = () => {
               )}
             </button>
             
-            {showNotifications && (
-              <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 ${
-                theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+          {showNotifications && (
+            <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 ${
+              theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
                 <div className={`p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                   <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Notifications</h3>
                 </div>
@@ -4936,7 +5869,7 @@ const App = () => {
               </div>
             )}
           </div>
-          
+
           {/* Profile */}
           <div className="relative profile-dropdown">
             <button
@@ -4995,7 +5928,11 @@ const App = () => {
           {renderContent()}
         </main>
       </div>
-      
+
+      {showHelp && (
+        <HelpModal onClose={() => setShowHelp(false)} theme={theme} />
+      )}
+
       {/* Toast Notifications */}
       {toast && (
         <Toast
