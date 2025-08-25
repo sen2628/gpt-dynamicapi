@@ -33,8 +33,10 @@ import logoDark from './app-integrator-logo-dark.svg';
 import apiCatalog from './api-catalog.json';
 import filterUtils from './filter-utils.js';
 import PathPicker from './PathPicker';
+import transformOps from './transform-ops.js';
 
 const { parseWhereInput } = filterUtils;
+const { TRANSFORM_OPS, normalizeTransformations } = transformOps;
 
 // Base URL for executing integrator configurations
 const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
@@ -44,46 +46,6 @@ const ENV_SETTINGS = Object.fromEntries(
 );
 
 const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
-
-// Registry of available transformation operations
-const TRANSFORM_OPS = {
-  rename_fields: {
-    label: 'Rename Fields',
-    expectedType: 'object',
-    allowCreate: true,
-    defaultConfig: { mappings: [{ from: '', to: '' }] }
-  },
-  select_fields: {
-    label: 'Select Fields',
-    expectedType: 'object',
-    allowCreate: true,
-    defaultConfig: { fields: [''] }
-  },
-  compute_field: {
-    label: 'Compute Field',
-    expectedType: null,
-    allowCreate: true,
-    defaultConfig: { field: '', expression: '' }
-  },
-  array_take: {
-    label: 'Array Take',
-    expectedType: 'array',
-    allowCreate: false,
-    defaultConfig: { count: 1 }
-  },
-  flatten: {
-    label: 'Flatten',
-    expectedType: 'object',
-    allowCreate: true,
-    defaultConfig: { delimiter: '.', depth: 0, preserveArrays: false }
-  },
-  unflatten: {
-    label: 'Unflatten',
-    expectedType: 'object',
-    allowCreate: true,
-    defaultConfig: { delimiter: '.', overwrite: false }
-  }
-};
 
 // Utilities to convert between flat and nested representations
 const nestSchema = (flat = {}) => {
@@ -541,9 +503,8 @@ const transformConfigToUserFormat = (config) => {
                     );
                     mapperSteps.forEach(step => transformations.push(step));
                     if (node.data.transformations) {
-                        node.data.transformations.forEach(t => {
-                            const { op, target, config, onError } = t;
-                            transformations.push({ op, target, config, onError });
+                        normalizeTransformations(node.data.transformations).forEach(step => {
+                            transformations.push(step);
                         });
                     }
                     break;
@@ -4719,15 +4680,15 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     const def = TRANSFORM_OPS[op];
     if (!def) return;
 
-    const newTransformation = {
-      id: `transform_${Date.now()}`,
-      op,
-      target: '',
-      expectedType: def.expectedType,
-      allowCreate: def.allowCreate !== undefined ? def.allowCreate : true,
-      config: JSON.parse(JSON.stringify(def.defaultConfig)),
-      onError: 'continue'
-    };
+      const newTransformation = {
+        id: `transform_${Date.now()}`,
+        op,
+        target: '',
+        expectedType: def.expectedType,
+        allowCreate: def.allowCreate !== undefined ? def.allowCreate : true,
+        config: JSON.parse(JSON.stringify(def.defaultConfig)),
+        onError: def.defaultOnError || 'continue'
+      };
 
     onUpdate({
       ...node,
