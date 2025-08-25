@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import Image from '@/components/core/Image';
 
 export default function Header() {
   return (
