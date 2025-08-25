@@ -2343,8 +2343,30 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
   const [showUnpublishModal, setShowUnpublishModal] = useState(null);
   const [showCloneModal, setShowCloneModal] = useState(null);
   const permissions = getEnvPermissions(environment);
-  const totalConfigs = configs.length;
-  const totalPublished = configs.filter(c => c.status === 'published').length;
+  const [totalConfigs, setTotalConfigs] = useState(configs.length);
+  const [totalPublished, setTotalPublished] = useState(
+    configs.filter(c => c.status === 'published').length
+  );
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const query = `\n          query ConfigStats {\n            totalConfigs\n            totalPublished\n          }\n        `;
+        const res = await fetch('/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        setTotalConfigs(data.data.totalConfigs);
+        setTotalPublished(data.data.totalPublished);
+      } catch (err) {
+        setTotalConfigs(configs.length);
+        setTotalPublished(configs.filter(c => c.status === 'published').length);
+      }
+    };
+    fetchStats();
+  }, [configs]);
 
   const handleDeleteClick = (e, config) => {
     e.stopPropagation();
@@ -2458,28 +2480,24 @@ const Dashboard = ({ configs, onSelectConfig, onCreateNew, onDeleteConfig, onClo
           {/* Config statistics */}
           <div className="flex gap-6 items-center">
             <div
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+              className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
                 theme === 'dark'
                   ? 'border-blue-500 text-white'
                   : 'border-blue-600 text-gray-900'
               }`}
             >
-              <span className="text-lg font-bold">{totalConfigs}</span>
-              <span className="mt-1 text-center text-[10px] leading-tight">
-                Total Configs
-              </span>
+              <span className="text-xl font-bold">{totalConfigs}</span>
+              <span className="text-xs text-center">Total Configs</span>
             </div>
             <div
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-full border-4 ${
+              className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border-4 ${
                 theme === 'dark'
                   ? 'border-green-500 text-white'
                   : 'border-green-600 text-gray-900'
               }`}
             >
-              <span className="text-lg font-bold">{totalPublished}</span>
-              <span className="mt-1 text-center text-[10px] leading-tight">
-                Published
-              </span>
+              <span className="text-xl font-bold">{totalPublished}</span>
+              <span className="text-xs text-center">Published</span>
             </div>
           </div>
 
@@ -2818,25 +2836,42 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 
 
   const handleSave = () => {
-    // Create a new version
-    const newVersionNumber = (config.versions.length > 0 ? Math.max(...config.versions.map(v => v.version)) : 0) + 1;
-    const newVersion = {
-      id: `v_${Date.now()}`,
-      version: newVersionNumber,
-      createdAt: new Date().toISOString(),
-      description: `Saved changes as v${newVersionNumber}`,
-      content: { 
-        workflow: config.workflow, 
-        inputSchema: config.inputSchema, 
-        outputSchema: config.outputSchema 
-      }
+    const content = {
+      workflow: config.workflow,
+      inputSchema: config.inputSchema,
+      outputSchema: config.outputSchema
     };
 
-    const updatedConfig = {
-      ...config,
-      versions: [...config.versions.map(v => ({ ...v, isCurrent: false })), { ...newVersion, isCurrent: true }],
-      modifiedAt: new Date().toISOString()
-    };
+    let updatedConfig;
+
+    if (config.wasPublished) {
+      const newVersionNumber = (config.versions.length > 0 ? Math.max(...config.versions.map(v => v.version)) : 0) + 1;
+      const newVersion = {
+        id: `v_${Date.now()}`,
+        version: newVersionNumber,
+        createdAt: new Date().toISOString(),
+        description: `Saved changes as v${newVersionNumber}`,
+        content
+      };
+      updatedConfig = {
+        ...config,
+        versions: [
+          ...config.versions.map(v => ({ ...v, isCurrent: false })),
+          { ...newVersion, isCurrent: true }
+        ],
+        modifiedAt: new Date().toISOString()
+      };
+    } else {
+      const updatedVersions = config.versions.map(v =>
+        v.isCurrent ? { ...v, content } : v
+      );
+      updatedConfig = {
+        ...config,
+        versions: updatedVersions,
+        modifiedAt: new Date().toISOString()
+      };
+    }
+
     onUpdate(updatedConfig);
     showToast('API configuration saved', 'success');
   };
@@ -4786,6 +4821,7 @@ const App = () => {
         description: 'Fetches weather data and transforms it for dashboard display.',
         version: '1.0.0',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['weather', 'rest', 'transform'],
@@ -4860,6 +4896,7 @@ const App = () => {
         description: 'Combines user data from multiple sources with advanced transformations.',
         version: '2.1.0',
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['graphql', 'aggregation', 'multi-api'],
@@ -4932,6 +4969,7 @@ const App = () => {
         description: 'Provides access to product catalog, inventory, and pricing information for an e-commerce platform.',
         version: '1.2.0',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['products', 'e-commerce', 'inventory'],
@@ -4960,6 +4998,7 @@ const App = () => {
         description: 'Draft API for posting updates to multiple social media platforms.',
         version: '0.5.0',
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['social', 'automation', 'draft'],
@@ -4983,6 +5022,7 @@ const App = () => {
         description: 'Handles credit card processing and transaction logging. High reliability.',
         version: '3.0.1',
         status: 'published',
+        wasPublished: true,
         createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
         modifiedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
         tags: ['payment', 'transactions', 'secure'],
@@ -5022,6 +5062,7 @@ const App = () => {
       description: '',
       version: '1.0.0',
       status: 'draft',
+      wasPublished: false,
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
       tags: [],
@@ -5078,6 +5119,7 @@ const App = () => {
             id: `api_${Date.now()}`,
             name: newName,
             status: 'draft',
+            wasPublished: false,
             createdAt: new Date().toISOString(),
             modifiedAt: new Date().toISOString(),
             applications: [newApp], // Set the selected app
@@ -5112,6 +5154,7 @@ const App = () => {
         id: `api_${Date.now()}`,
         name: newName,
         status: 'draft',
+        wasPublished: false,
         createdAt: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
         applications: [newApp],
@@ -5146,11 +5189,11 @@ const App = () => {
   };
 
   const handlePublish = (configId) => {
-      setConfigs(prevConfigs => prevConfigs.map(c => 
-          c.id === configId ? { ...c, status: 'published', modifiedAt: new Date().toISOString() } : c
+      setConfigs(prevConfigs => prevConfigs.map(c =>
+          c.id === configId ? { ...c, status: 'published', wasPublished: true, modifiedAt: new Date().toISOString() } : c
       ));
       if (selectedConfig?.id === configId) {
-          setSelectedConfig(prev => ({...prev, status: 'published'}));
+          setSelectedConfig(prev => ({...prev, status: 'published', wasPublished: true}));
           setStudioMode('view');
       }
       showToast('API published successfully', 'success');
