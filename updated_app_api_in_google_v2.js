@@ -32,6 +32,9 @@ import logoLight from './app-integrator-logo-light.svg';
 import logoDark from './app-integrator-logo-dark.svg';
 import apiCatalog from './api-catalog.json';
 
+// Base URL for executing integrator configurations
+const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
+
 const ENV_SETTINGS = Object.fromEntries(
   (envConfig.environments || []).map(e => [e.categoryId, e.categoryValues])
 );
@@ -1746,6 +1749,9 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const [activeTab, setActiveTab] = useState('request');
     const [activeCodeLang, setActiveCodeLang] = useState('shell');
     const [copied, setCopied] = useState(false);
+    const [inputMode, setInputMode] = useState('form');
+    const [jsonInput, setJsonInput] = useState('{}');
+    const [executionSteps, setExecutionSteps] = useState([]);
 
     useEffect(() => {
         // Initialize input fields with example values from schema
@@ -1756,7 +1762,22 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
             });
         }
         setInputValues(initialInputs);
+        setJsonInput(JSON.stringify(initialInputs, null, 2));
     }, [config.inputSchema]);
+
+    const switchToJson = () => {
+        setJsonInput(JSON.stringify(inputValues, null, 2));
+        setInputMode('json');
+    };
+
+    const switchToForm = () => {
+        try {
+            setInputValues(JSON.parse(jsonInput || '{}'));
+            setInputMode('form');
+        } catch (e) {
+            showToast('Invalid JSON', 'error');
+        }
+    };
 
     const handleInputChange = (name, value) => {
         setInputValues(prev => ({ ...prev, [name]: value }));
@@ -1765,23 +1786,48 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     const handleTestApi = async () => {
         setIsTesting(true);
         setApiResponse(null);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
+        setExecutionSteps([]);
 
-        const mockResponse = {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', 'X-Request-Id': `req_${Date.now()}` },
-            data: {
-                status: "success",
-                data: {
-                    message: `Data retrieved for ${Object.values(inputValues).join(', ')}.`,
-                    ...config.outputSchema
-                }
-            },
-            responseTime: `${Math.floor(Math.random() * 200) + 50}ms`
-        };
+        let payload = inputValues;
+        if (inputMode === 'json') {
+            try {
+                payload = JSON.parse(jsonInput || '{}');
+            } catch (e) {
+                showToast('Invalid JSON input', 'error');
+                setIsTesting(false);
+                return;
+            }
+        }
 
-        setApiResponse(mockResponse);
-        setIsTesting(false);
+        try {
+            const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+                },
+                body: JSON.stringify({ input: payload, config })
+            });
+            const data = await res.json();
+            const steps = data.steps || [];
+            for (const step of steps) {
+                setExecutionSteps(prev => [...prev, { name: step.name || `Step ${prev.length + 1}`, status: 'running' }]);
+                await new Promise(r => setTimeout(r, 500));
+                setExecutionSteps(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, status: 'success' } : s));
+            }
+            setApiResponse({
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+                data,
+                responseTime: data.responseTime || ''
+            });
+            showToast('Request completed', 'success');
+        } catch (err) {
+            setApiResponse({ status: 500, data: { error: err.message } });
+            showToast('Request failed', 'error');
+        } finally {
+            setIsTesting(false);
+        }
     };
 
     const copyToClipboard = (text) => {
@@ -1805,7 +1851,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
     };
 
     const generateCodeSnippet = useCallback((language) => {
-        const baseUrl = `https://api-builder.dev.naqp.toyota.com/execute/${config.id}`;
+        const baseUrl = `${INTEGRATOR_BASE_URL}/${config.name}`;
         const headers = { 'Authorization': 'Bearer YOUR_API_KEY', 'Content-Type': 'application/json' };
         const body = JSON.stringify(inputValues, null, 2);
 
@@ -1869,7 +1915,7 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                     
                     <h3 className={`text-lg font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>API Endpoint</h3>
                     <pre className={`w-full p-3 rounded-lg text-sm overflow-x-auto mb-6 ${theme === 'dark' ? 'bg-gray-800 text-green-400' : 'bg-gray-100 text-green-700'}`}>
-                        <span className={`font-bold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>POST</span> https://api-builder.dev.naqp.toyota.com/execute/{config.id}
+                        <span className={`font-bold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>POST</span> {`${INTEGRATOR_BASE_URL}/${config.name}`}
                     </pre>
 
                     <h3 className={`text-lg font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Input Schema</h3>
@@ -1894,19 +1940,33 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                         <div className="flex-1 flex flex-col overflow-y-auto">
                             {/* Request Section */}
                             <div className="p-4 sm:p-6 space-y-4">
-                                <h4 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Parameters</h4>
-                                {config.inputSchema && Object.entries(config.inputSchema).map(([key, schema]) => (
-                                    <div key={key}>
-                                        <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
-                                        <input
-                                            type="text"
-                                            value={inputValues[key] || ''}
-                                            placeholder={schema.example || ''}
-                                            onChange={(e) => handleInputChange(key, e.target.value)}
-                                            className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                                        />
+                                <div className="flex items-center justify-between">
+                                    <h4 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Parameters</h4>
+                                    <div className="flex gap-2 text-xs">
+                                        <button onClick={switchToForm} className={inputMode === 'form' ? 'text-blue-500' : ''}>Form</button>
+                                        <button onClick={switchToJson} className={inputMode === 'json' ? 'text-blue-500' : ''}>JSON</button>
                                     </div>
-                                ))}
+                                </div>
+                                {inputMode === 'form' ? (
+                                    config.inputSchema && Object.entries(config.inputSchema).map(([key, schema]) => (
+                                        <div key={key}>
+                                            <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{key}</label>
+                                            <input
+                                                type="text"
+                                                value={inputValues[key] || ''}
+                                                placeholder={schema.example || ''}
+                                                onChange={(e) => handleInputChange(key, e.target.value)}
+                                                className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                                            />
+                                        </div>
+                                    ))
+                                ) : (
+                                    <textarea
+                                        value={jsonInput}
+                                        onChange={(e) => setJsonInput(e.target.value)}
+                                        className={`w-full h-40 px-3 py-2 rounded-lg border font-mono text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                                    />
+                                )}
                             </div>
                             <div className={`p-4 sm:p-6 border-y ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                                 <button onClick={handleTestApi} disabled={isTesting} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
@@ -1945,6 +2005,19 @@ const SubscriberView = ({ config, theme, onExit, showToast }) => {
                                         <pre className={`w-full p-4 rounded-lg text-sm overflow-x-auto ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-800'}`}>
                                             <code>{JSON.stringify(apiResponse.data, null, 2)}</code>
                                         </pre>
+                                    </div>
+                                )}
+                                {executionSteps.length > 0 && (
+                                    <div className="mt-4">
+                                        <h5 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Execution Steps</h5>
+                                        <ol className="space-y-1">
+                                            {executionSteps.map((step, idx) => (
+                                                <li key={idx} className="text-xs flex items-center gap-2">
+                                                    {step.status === 'success' ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                                    <span>{step.name || `Step ${idx + 1}`}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
                                     </div>
                                 )}
                             </div>
@@ -2609,6 +2682,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const [activeTab, setActiveTab] = useState('workflow');
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResults, setExecutionResults] = useState(null);
+  const [executionSteps, setExecutionSteps] = useState([]);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [testInputs, setTestInputs] = useState({});
@@ -2679,90 +2753,30 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
   const handleExecuteWorkflow = async () => {
     setIsExecuting(true);
     setExecutionResults(null);
-    
-    // Simulate workflow execution with animations
-    const nodes = [...config.workflow.nodes];
-    const results = {};
-    
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      
-      // Update node status to running
-      let updatedNodes = config.workflow.nodes.map(n => 
-        n.id === node.id ? { ...n, data: { ...n.data, status: 'running' } } : n
-      );
-      
-      // Animate edges
-      let updatedEdges = config.workflow.edges.map(e => ({
-        ...e,
-        animated: e.target === node.id
-      }));
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: updatedNodes, edges: updatedEdges }
+    setExecutionSteps([]);
+    try {
+      const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+        },
+        body: JSON.stringify({ input: testInputs, config })
       });
-      
-      // Simulate node execution
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate mock result for the node
-      if (node.type === 'api' || node.type === 'graphql') {
-        results[node.id] = {
-          status: 'success',
-          data: {
-            temperature: 22,
-            location: { name: 'New York', country: 'USA' },
-            forecast: [
-              { day: 'Today', temp: 22, condition: 'Sunny' },
-              { day: 'Tomorrow', temp: 20, condition: 'Cloudy' }
-            ]
-          },
-          responseTime: Math.floor(Math.random() * 300) + 100
-        };
-      } else if (node.type === 'transform') {
-        results[node.id] = {
-          status: 'success',
-          data: {
-            temperature: 22,
-            loc_name: 'New York',
-            loc_country: 'USA'
-          },
-          transformations: node.data.transformations?.length || 0
-        };
+      const data = await res.json();
+      const steps = data.steps || [];
+      for (const step of steps) {
+        setExecutionSteps(prev => [...prev, { name: step.name || `Step ${prev.length + 1}`, status: 'running' }]);
+        await new Promise(r => setTimeout(r, 500));
+        setExecutionSteps(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, status: 'success' } : s));
       }
-      
-      // Update node status to completed
-      const completedNodes = updatedNodes.map(n => 
-        n.id === node.id ? { ...n, data: { ...n.data, status: 'completed' } } : n
-      );
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: completedNodes, edges: updatedEdges }
-      });
+      setExecutionResults({ result: { status: 'success', data: data.output || data } });
+      showToast('Workflow executed successfully', 'success');
+    } catch (err) {
+      showToast('Workflow execution failed', 'error');
+    } finally {
+      setIsExecuting(false);
     }
-    
-    // Reset animations and statuses
-    setTimeout(() => {
-      const resetNodes = config.workflow.nodes.map(n => ({
-        ...n,
-        data: { ...n.data, status: 'idle' }
-      }));
-      const resetEdges = config.workflow.edges.map(e => ({
-        ...e,
-        animated: false
-      }));
-      
-      onUpdate({
-        ...config,
-        workflow: { ...config.workflow, nodes: resetNodes, edges: resetEdges }
-      });
-    }, 2000);
-    
-    setExecutionResults(results);
-    setIsExecuting(false);
-    showToast('Workflow executed successfully', 'success');
   };
   
     const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
@@ -3020,6 +3034,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
           environment={environment}
           theme={theme}
           executionResults={executionResults}
+          executionSteps={executionSteps}
           onCloseExecutionResults={() => setExecutionResults(null)}
           testInputs={testInputs}
           onUpdateTestInputs={setTestInputs}
@@ -3060,7 +3075,7 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
 };
 
 // Enhanced Workflow Designer Component
-const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResults, onCloseExecutionResults, testInputs, onUpdateTestInputs, showToast, isReadOnly }) => {
+const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResults, executionSteps, onCloseExecutionResults, testInputs, onUpdateTestInputs, showToast, isReadOnly }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [draggingNode, setDraggingNode] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
@@ -3624,8 +3639,21 @@ const WorkflowDesigner = ({ config, onUpdate, environment, theme, executionResul
                   );
                 })}
             </div>
+        </div>
+        {executionSteps.length > 0 && (
+          <div className={`absolute top-4 right-4 p-4 rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+            <h4 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Execution Progress</h4>
+            <ol className="space-y-1">
+              {executionSteps.map((step, idx) => (
+                <li key={idx} className="text-xs flex items-center gap-2">
+                  {step.status === 'success' ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                  <span>{step.name}</span>
+                </li>
+              ))}
+            </ol>
           </div>
-           {/* Zoom Controls */}
+        )}
+          {/* Zoom Controls */}
            <div className="absolute bottom-4 right-4 flex items-center gap-1">
                 <button onClick={() => handleZoom('out')} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ZoomOut className="w-5 h-5" /></button>
                 <button onClick={handleFitToScreen} className={`p-2 rounded-lg shadow-md transition-colors ${theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Maximize2 className="w-5 h-5" /></button>
@@ -3788,50 +3816,37 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     );
   }
 
-  const handleTestApi = async () => {
-    setIsTesting(true);
-    
-    // Simulate API test
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const mockResponse = {
-      status: 200,
-      data: {
-        current: {
-          temp_c: 22,
-          condition: { text: 'Sunny' },
-          humidity: 65
-        },
-        location: {
-          name: 'London',
-          country: 'United Kingdom',
-          lat: 51.52,
-          lon: -0.11
-        },
-        forecast: {
-          forecastday: [
-            { date: '2024-01-20', day: { maxtemp_c: 23, mintemp_c: 15 } },
-            { date: '2024-01-21', day: { maxtemp_c: 21, mintemp_c: 14 } }
-          ]
+    const handleTestApi = async () => {
+      setIsTesting(true);
+      setTestResponse(null);
+      try {
+        const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
+          },
+          body: JSON.stringify({ config, nodeId: node.id })
+        });
+        const data = await res.json();
+        setTestResponse({ status: res.status, data });
+        showToast('API test successful', 'success');
+        if (node.type === 'api' || node.type === 'graphql') {
+          onUpdate({
+            ...node,
+            data: {
+              ...node.data,
+              responseSchema: extractSchema(data)
+            }
+          });
         }
+      } catch (err) {
+        setTestResponse({ status: 500, data: { error: err.message } });
+        showToast('API test failed', 'error');
+      } finally {
+        setIsTesting(false);
       }
     };
-    
-    setTestResponse(mockResponse);
-    setIsTesting(false);
-    showToast('API test successful', 'success');
-    
-    // Auto-detect schema
-    if (node.type === 'api' || node.type === 'graphql') {
-      onUpdate({
-        ...node,
-        data: {
-          ...node.data,
-          responseSchema: extractSchema(mockResponse.data)
-        }
-      });
-    }
-  };
   
   const extractSchema = (data, path = '') => {
     const schema = {};
