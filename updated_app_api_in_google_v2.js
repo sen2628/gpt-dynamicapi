@@ -41,6 +41,26 @@ const ENV_SETTINGS = Object.fromEntries(
 
 const getEnvPermissions = (env) => ENV_SETTINGS[env] || {};
 
+// Registry of available transformation operations
+const TRANSFORM_OPS = {
+  rename_fields: {
+    label: 'Rename Fields',
+    defaultConfig: { mappings: [{ from: '', to: '' }] }
+  },
+  select_fields: {
+    label: 'Select Fields',
+    defaultConfig: { fields: [''] }
+  },
+  compute_field: {
+    label: 'Compute Field',
+    defaultConfig: { field: '', expression: '' }
+  },
+  array_take: {
+    label: 'Array Take',
+    defaultConfig: { count: 1 }
+  }
+};
+
 // Utilities to convert between flat and nested representations
 const nestSchema = (flat = {}) => {
   const nested = {};
@@ -418,18 +438,8 @@ const transformConfigToUserFormat = (config) => {
                 case 'transform':
                     if (node.data.transformations) {
                         node.data.transformations.forEach(t => {
-                            const newT = { type: t.type };
-                            if (t.type === 'rename') {
-                                newT.mappings = { [t.from]: t.to };
-                            } else if (t.type === 'flatten') {
-                                newT.path = t.path;
-                            } else if (t.type === 'filter') {
-                                // This is a simplified mapping from the app's internal structure
-                                newT.rules = [{ expression: t.condition }];
-                            } else {
-                                newT.config = t.config;
-                            }
-                            transformations.push(newT);
+                            const { op, target, config, onError } = t;
+                            transformations.push({ op, target, config, onError });
                         });
                     }
                     break;
@@ -4524,34 +4534,19 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
     return schema;
   };
   
-  const addTransformation = (type) => {
+  const addTransformation = (op) => {
     const transformations = node.data.transformations || [];
+    const def = TRANSFORM_OPS[op];
+    if (!def) return;
+
     const newTransformation = {
       id: `transform_${Date.now()}`,
-      type,
-      config: {}
+      op,
+      target: '',
+      config: JSON.parse(JSON.stringify(def.defaultConfig)),
+      onError: 'continue'
     };
-    
-    switch (type) {
-      case 'rename':
-        newTransformation.config = { from: '', to: '' };
-        break;
-      case 'flatten':
-        newTransformation.config = { path: '', prefix: '' };
-        break;
-      case 'nest':
-        newTransformation.config = { fields: [], as: '' };
-        break;
-      case 'filter':
-        newTransformation.config = { condition: '' };
-        break;
-      case 'compute':
-        newTransformation.config = { field: '', expression: '' };
-        break;
-      default:
-        break;
-    }
-    
+
     onUpdate({
       ...node,
       data: {
@@ -4560,13 +4555,26 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
       }
     });
   };
-  
-  const updateTransformation = (transformId, config) => {
+
+  const updateTransformation = (transformId, updates) => {
     const transformations = node.data.transformations || [];
-    const updated = transformations.map(t => 
-      t.id === transformId ? { ...t, config } : t
-    );
-    
+    const updated = transformations.map(t => {
+      if (t.id !== transformId) return t;
+      const def = TRANSFORM_OPS[t.op] || { defaultConfig: {} };
+      const allowed = Object.keys(def.defaultConfig || {});
+      const newT = { ...t };
+      if (updates.target !== undefined) newT.target = updates.target;
+      if (updates.onError !== undefined) newT.onError = updates.onError;
+      if (updates.config) {
+        const clean = {};
+        Object.entries(updates.config).forEach(([k, v]) => {
+          if (allowed.includes(k)) clean[k] = v;
+        });
+        newT.config = { ...t.config, ...clean };
+      }
+      return newT;
+    });
+
     onUpdate({
       ...node,
       data: {
@@ -4920,11 +4928,18 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                             theme === 'dark' ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
                             }`}
                         >
-                            <button onClick={() => { addTransformation('rename'); document.getElementById(`transform-menu-${node.id}`).classList.add('hidden'); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}><Type className="w-4 h-4 inline mr-2" />Rename Field</button>
-                            <button onClick={() => { addTransformation('flatten'); document.getElementById(`transform-menu-${node.id}`).classList.add('hidden'); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}><Minimize2 className="w-4 h-4 inline mr-2" />Flatten</button>
-                            <button onClick={() => { addTransformation('nest'); document.getElementById(`transform-menu-${node.id}`).classList.add('hidden'); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}><Boxes className="w-4 h-4 inline mr-2" />Nest Fields</button>
-                            <button onClick={() => { addTransformation('filter'); document.getElementById(`transform-menu-${node.id}`).classList.add('hidden'); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}><Filter className="w-4 h-4 inline mr-2" />Filter</button>
-                            <button onClick={() => { addTransformation('compute'); document.getElementById(`transform-menu-${node.id}`).classList.add('hidden'); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}><Hash className="w-4 h-4 inline mr-2" />Compute Field</button>
+                            {Object.entries(TRANSFORM_OPS).map(([op, def]) => (
+                                <button
+                                    key={op}
+                                    onClick={() => {
+                                        addTransformation(op);
+                                        document.getElementById(`transform-menu-${node.id}`).classList.add('hidden');
+                                    }}
+                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-opacity-10 hover:bg-blue-500 ${ theme === 'dark' ? 'text-gray-300' : 'text-gray-700' }`}
+                                >
+                                    {def.label}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 )}
@@ -4939,7 +4954,7 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                        {transform.type.charAt(0).toUpperCase() + transform.type.slice(1)}
+                        {TRANSFORM_OPS[transform.op]?.label || transform.op}
                       </span>
                       {!isReadOnly && (
                         <button
@@ -4950,18 +4965,139 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
                         </button>
                       )}
                     </div>
-                    
-                    {/* Transformation Config */}
-                    {transform.type === 'rename' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="text" list={fieldOptionsId} placeholder="From field" value={transform.config.from || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, from: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
-                        <input type="text" placeholder="To field" value={transform.config.to || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, to: e.target.value })} className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
-                      </div>
-                    )}
-                    
-                    {transform.type === 'filter' && (
-                      <input type="text" placeholder="Condition (e.g., value > 10)" value={transform.config.condition || ''} readOnly={isReadOnly} onChange={(e) => updateTransformation(transform.id, { ...transform.config, condition: e.target.value })} className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`} />
-                    )}
+
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        list={fieldOptionsId}
+                        placeholder="Target path"
+                        value={transform.target || ''}
+                        readOnly={isReadOnly}
+                        onChange={(e) => updateTransformation(transform.id, { target: e.target.value })}
+                        className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      />
+
+                      <select
+                        value={transform.onError || 'continue'}
+                        disabled={isReadOnly}
+                        onChange={(e) => updateTransformation(transform.id, { onError: e.target.value })}
+                        className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                      >
+                        <option value="continue">Continue</option>
+                        <option value="skip">Skip</option>
+                        <option value="stop">Stop</option>
+                      </select>
+
+                      {transform.op === 'rename_fields' && (
+                        <div className="space-y-2">
+                          {(transform.config.mappings || []).map((m, idx) => (
+                            <div key={idx} className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                list={fieldOptionsId}
+                                placeholder="From field"
+                                value={m.from || ''}
+                                readOnly={isReadOnly}
+                                onChange={(e) => {
+                                  const mappings = [...(transform.config.mappings || [])];
+                                  mappings[idx] = { ...m, from: e.target.value };
+                                  updateTransformation(transform.id, { config: { mappings } });
+                                }}
+                                className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                              />
+                              <input
+                                type="text"
+                                placeholder="To field"
+                                value={m.to || ''}
+                                readOnly={isReadOnly}
+                                onChange={(e) => {
+                                  const mappings = [...(transform.config.mappings || [])];
+                                  mappings[idx] = { ...m, to: e.target.value };
+                                  updateTransformation(transform.id, { config: { mappings } });
+                                }}
+                                className={`px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                              />
+                            </div>
+                          ))}
+                          {!isReadOnly && (
+                            <button
+                              onClick={() => {
+                                const mappings = [...(transform.config.mappings || []), { from: '', to: '' }];
+                                updateTransformation(transform.id, { config: { mappings } });
+                              }}
+                              className="text-xs text-blue-500"
+                            >
+                              Add Mapping
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {transform.op === 'select_fields' && (
+                        <div className="space-y-2">
+                          {(transform.config.fields || []).map((f, idx) => (
+                            <input
+                              key={idx}
+                              type="text"
+                              list={fieldOptionsId}
+                              placeholder="Field path"
+                              value={f || ''}
+                              readOnly={isReadOnly}
+                              onChange={(e) => {
+                                const fields = [...(transform.config.fields || [])];
+                                fields[idx] = e.target.value;
+                                updateTransformation(transform.id, { config: { fields } });
+                              }}
+                              className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                            />
+                          ))}
+                          {!isReadOnly && (
+                            <button
+                              onClick={() => {
+                                const fields = [...(transform.config.fields || []), ''];
+                                updateTransformation(transform.id, { config: { fields } });
+                              }}
+                              className="text-xs text-blue-500"
+                            >
+                              Add Field
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {transform.op === 'compute_field' && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Output field"
+                            value={transform.config.field || ''}
+                            readOnly={isReadOnly}
+                            onChange={(e) => updateTransformation(transform.id, { config: { field: e.target.value } })}
+                            className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Expression"
+                            value={transform.config.expression || ''}
+                            readOnly={isReadOnly}
+                            onChange={(e) => updateTransformation(transform.id, { config: { expression: e.target.value } })}
+                            className={`w-full px-2 py-1 text-sm rounded border font-mono ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                          />
+                        </div>
+                      )}
+
+                      {transform.op === 'array_take' && (
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Count"
+                          value={transform.config.count ?? 1}
+                          readOnly={isReadOnly}
+                          onChange={(e) => updateTransformation(transform.id, { config: { count: Number(e.target.value) } })}
+                          className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' } ${isReadOnly ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+                        />
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -5194,7 +5330,7 @@ const App = () => {
           nodes: [
             { id: 'start_1', type: 'start', position: { x: 100, y: 200 }, data: { label: 'Start', status: 'idle' } },
             { id: 'api_1', type: 'api', position: { x: 300, y: 200 }, data: { label: 'Fetch Weather', apiType: 'REST', method: 'GET', endpoint: 'https://api.weatherapi.com/v1/forecast.json', headers: { 'X-API-Key': '{{WEATHER_API_KEY}}' }, queryParams: { q: '{{city}}', days: '3' }, authentication: { type: 'apiKey', keyLocation: 'header', keyName: 'X-API-Key' }, timeout: 5000, retries: 3, status: 'idle' } },
-            { id: 'transform_1', type: 'transform', position: { x: 500, y: 200 }, data: { label: 'Transform Data', transformType: 'custom', transformations: [ { type: 'rename', from: 'current.temp_c', to: 'temperature' }, { type: 'flatten', path: 'location', prefix: 'loc_' }, { type: 'filter', condition: 'temperature > 0' } ], status: 'idle' } },
+            { id: 'transform_1', type: 'transform', position: { x: 500, y: 200 }, data: { label: 'Transform Data', transformType: 'custom', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'current.temp_c', to: 'temperature' }] }, onError: 'continue' }, { op: 'compute_field', target: '', config: { field: 'isHot', expression: 'temperature > 30' }, onError: 'continue' }, { op: 'array_take', target: 'forecast.forecastday', config: { count: 3 }, onError: 'continue' } ], status: 'idle' } },
             { id: 'end_1', type: 'end', position: { x: 700, y: 200 }, data: { label: 'End', status: 'idle' } }
           ],
           edges: [
@@ -5221,7 +5357,7 @@ const App = () => {
                     nodes: [
                         { id: 'start_1', type: 'start', position: { x: 100, y: 200 }, data: { label: 'Start', status: 'idle' } },
                         { id: 'api_1', type: 'api', position: { x: 300, y: 200 }, data: { label: 'Fetch Weather', apiType: 'REST', method: 'GET', endpoint: 'https://api.weatherapi.com/v1/forecast.json', headers: { 'X-API-Key': '{{WEATHER_API_KEY}}' }, queryParams: { q: '{{city}}', days: '3' }, authentication: { type: 'apiKey', keyLocation: 'header', keyName: 'X-API-Key' }, timeout: 5000, retries: 3, status: 'idle' } },
-                        { id: 'transform_1', type: 'transform', position: { x: 500, y: 200 }, data: { label: 'Transform Data', transformType: 'custom', transformations: [ { type: 'rename', from: 'current.temp_c', to: 'temperature' }, { type: 'flatten', path: 'location', prefix: 'loc_' }, { type: 'filter', condition: 'temperature > 0' } ], status: 'idle' } },
+                        { id: 'transform_1', type: 'transform', position: { x: 500, y: 200 }, data: { label: 'Transform Data', transformType: 'custom', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'current.temp_c', to: 'temperature' }] }, onError: 'continue' }, { op: 'compute_field', target: '', config: { field: 'isHot', expression: 'temperature > 30' }, onError: 'continue' }, { op: 'array_take', target: 'forecast.forecastday', config: { count: 3 }, onError: 'continue' } ], status: 'idle' } },
                         { id: 'end_1', type: 'end', position: { x: 700, y: 200 }, data: { label: 'End', status: 'idle' } }
                     ],
                     edges: [
@@ -5265,7 +5401,7 @@ const App = () => {
             { id: 'api_2', type: 'api', position: { x: 400, y: 100 }, data: { label: 'Get Orders', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/orders/{{userId}}', status: 'idle' } },
             { id: 'api_3', type: 'api', position: { x: 400, y: 300 }, data: { label: 'Get Preferences', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/preferences/{{userId}}', status: 'idle' } },
             { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Combine Data', aggregationType: 'merge', mergeStrategy: 'shallow', status: 'idle' } },
-            { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { type: 'nest', fields: ['orders', 'preferences'], as: 'userData' }, { type: 'compute', field: 'totalOrderValue', expression: 'userData.orders.reduce((sum, order) => sum + order.total, 0)' } ], status: 'idle' } },
+            { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'orders', to: 'userOrders' }] }, onError: 'continue' }, { op: 'select_fields', target: '', config: { fields: ['userOrders', 'preferences'] }, onError: 'continue' } ], status: 'idle' } },
             { id: 'end_1', type: 'end', position: { x: 1000, y: 200 }, data: { label: 'End', status: 'idle' } }
           ],
           edges: [
@@ -5299,7 +5435,7 @@ const App = () => {
                     { id: 'api_2', type: 'api', position: { x: 400, y: 100 }, data: { label: 'Get Orders', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/orders/{{userId}}', status: 'idle' } },
                     { id: 'api_3', type: 'api', position: { x: 400, y: 300 }, data: { label: 'Get Preferences', apiType: 'REST', method: 'GET', endpoint: 'https://api.example.com/preferences/{{userId}}', status: 'idle' } },
                     { id: 'aggregate_1', type: 'aggregate', position: { x: 600, y: 200 }, data: { label: 'Combine Data', aggregationType: 'merge', mergeStrategy: 'shallow', status: 'idle' } },
-                    { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { type: 'nest', fields: ['orders', 'preferences'], as: 'userData' }, { type: 'compute', field: 'totalOrderValue', expression: 'userData.orders.reduce((sum, order) => sum + order.total, 0)' } ], status: 'idle' } },
+                    { id: 'transform_2', type: 'transform', position: { x: 800, y: 200 }, data: { label: 'Final Transform', transformations: [ { op: 'rename_fields', target: '', config: { mappings: [{ from: 'orders', to: 'userOrders' }] }, onError: 'continue' }, { op: 'select_fields', target: '', config: { fields: ['userOrders', 'preferences'] }, onError: 'continue' } ], status: 'idle' } },
                     { id: 'end_1', type: 'end', position: { x: 1000, y: 200 }, data: { label: 'End', status: 'idle' } }
                   ],
                   edges: [
