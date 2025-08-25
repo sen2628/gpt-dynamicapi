@@ -323,54 +323,11 @@ const HelpModal = ({ onClose, theme }) => (
             <li><code>trueStep</code>: step run when true</li>
             <li><code>falseStep</code>: step run when false</li>
           </ul>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Condition: user.age > 18\nTrue -> call /adult\nFalse -> call /minor`}</pre>
-        </section>
-        <section>
-          <h3 className="font-medium mb-1">API Specifications</h3>
-          <p>Browse available APIs with details:</p>
-          <ul className="list-disc ml-6 mt-2">
-            <li><code>id</code> &amp; <code>name</code>: identifiers</li>
-            <li><code>endpoint</code>: request URL</li>
-            <li><code>inputSchema</code> / <code>outputSchema</code>: JSON structures</li>
-            <li><code>code snippets</code>: ready-to-use calls</li>
-          </ul>
-          <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Example: fetch('https://api.example.com/weather?q=London')`}</pre>
-          {apiCatalog.restApis.map(api => (
-            <div key={api.id} className="mt-2">
-              <h4 className="font-medium">{api.name}</h4>
-              <p>URL: {api.endpoint}</p>
-              <h5 className="mt-2">Input</h5>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
-              <h5 className="mt-2">Output</h5>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
-              <h5 className="mt-2">Code Snippets</h5>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.get('${api.endpoint}', params={'q':'London','key':'YOUR_API_KEY'})`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl '${api.endpoint}?q=London&key=YOUR_API_KEY'`}</pre>
-            </div>
-          ))}
-          {apiCatalog.graphqlApis.map(api => (
-            <div key={api.id} className="mt-6">
-              <h4 className="font-medium">{api.name}</h4>
-              <p>URL: {api.endpoint}</p>
-              <h5 className="mt-2">Input</h5>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
-              <h5 className="mt-2">Output</h5>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
-              <h5 className="mt-2">Code Snippets</h5>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.post('${api.endpoint}', json={'query':'${api.query}'})`}</pre>
-              <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
-              <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl -X POST '${api.endpoint}' -d '{"query":"${api.query}"}'`}</pre>
-            </div>
-          ))}
-        </section>
+            <pre className={`mt-2 p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Condition: user.age > 18\nTrue -> call /adult\nFalse -> call /minor`}</pre>
+          </section>
         </div>
       </div>
-  </div>
+    </div>
   );
 
 // --- MODAL & PANEL COMPONENTS ---
@@ -582,10 +539,52 @@ const ApiSpecModal = ({ config, theme, onClose }) => {
             </button>
           </div>
         </div>
-        <div className="p-4">
+        <div className="p-4 space-y-6 text-sm">
           <pre className={`text-xs overflow-x-auto p-2 rounded ${theme === 'dark' ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
             {JSON.stringify(spec, null, 2)}
           </pre>
+          <section>
+            <h3 className="font-medium mb-1">API Specifications</h3>
+            <p>Browse available APIs with details and code snippets:</p>
+            <ul className="list-disc ml-6 mt-2">
+              <li><code>id</code> &amp; <code>name</code>: identifiers</li>
+              <li><code>endpoint</code>: request URL</li>
+              <li><code>inputSchema</code> / <code>outputSchema</code>: JSON structures</li>
+              <li><code>code snippets</code>: ready-to-use calls</li>
+            </ul>
+            {apiCatalog.restApis.map(api => (
+              <div key={api.id} className="mt-2">
+                <h4 className="font-medium">{api.name}</h4>
+                <p>URL: {api.endpoint}</p>
+                <h5 className="mt-2">Input</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Output</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Code Snippets</h5>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}?q=London&key=YOUR_API_KEY')`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.get('${api.endpoint}', params={'q':'London','key':'YOUR_API_KEY'})`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl '${api.endpoint}?q=London&key=YOUR_API_KEY'`}</pre>
+              </div>
+            ))}
+            {apiCatalog.graphqlApis.map(api => (
+              <div key={api.id} className="mt-6">
+                <h4 className="font-medium">{api.name}</h4>
+                <p>URL: {api.endpoint}</p>
+                <h5 className="mt-2">Input</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.inputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Output</h5>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{JSON.stringify(api.outputSchema, null, 2)}</pre>
+                <h5 className="mt-2">Code Snippets</h5>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`TypeScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`JavaScript: fetch('${api.endpoint}', { method: 'POST', body: JSON.stringify({ query: '${api.query}' }) })`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Python: requests.post('${api.endpoint}', json={'query':'${api.query}'})`}</pre>
+                <pre className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`Java: HttpClient.newHttpClient().send(...)`}</pre>
+                <pre className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}>{`curl: curl -X POST '${api.endpoint}' -d '{"query":"${api.query}"}'`}</pre>
+              </div>
+            ))}
+          </section>
         </div>
       </div>
     </div>
