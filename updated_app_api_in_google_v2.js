@@ -136,7 +136,7 @@ const flattenValues = (nested = {}, prefix = '') => {
 };
 
 // --- NEW: Schema Mapper Component ---
-const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, theme }) => {
+const SchemaMapper = ({ sourceSchema, targetSchema, rows, onUpdateRows, theme }) => {
     const [draggedField, setDraggedField] = useState(null);
 
     const renderSchemaFields = (schema, type) => {
@@ -164,8 +164,14 @@ const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, 
 
     const handleDrop = (targetField) => {
         if (draggedField) {
-            const newMappings = { ...mappings, [draggedField]: targetField };
-            onUpdateMappings(newMappings);
+            const existingIdx = rows.findIndex(r => r.source === draggedField);
+            let newRows = [...rows];
+            if (existingIdx >= 0) {
+                newRows[existingIdx] = { ...newRows[existingIdx], target: targetField };
+            } else {
+                newRows.push({ source: draggedField, target: targetField });
+            }
+            onUpdateRows(newRows);
         }
     };
 
@@ -179,8 +185,8 @@ const SchemaMapper = ({ sourceSchema, targetSchema, mappings, onUpdateMappings, 
 
             {/* Mappings */}
             <div className="col-span-1 flex flex-col items-center pt-8">
-                {Object.entries(mappings).map(([source, target]) => (
-                    <div key={`${source}-${target}`} className="flex items-center w-full my-2">
+                {rows.map((row, idx) => (
+                    <div key={`${row.source}-${row.target}-${idx}`} className="flex items-center w-full my-2">
                         <div className="flex-1 h-px bg-gray-500"></div>
                         <ArrowRight className="w-5 h-5 text-blue-500 mx-2" />
                         <div className="flex-1 h-px bg-gray-500"></div>
@@ -442,6 +448,74 @@ const hasPredicate = (where) => {
     return false;
 };
 
+// Compile mapper rows into transformation steps
+const compileMapperToSteps = (scopePath = '', rows = [], mode = 'rename') => {
+    let mappingsArray;
+    if (Array.isArray(rows)) {
+        mappingsArray = rows;
+    } else if (rows && typeof rows === 'object') {
+        // backward compatibility for object maps
+        mappingsArray = Object.entries(rows).map(([source, target]) => ({ source, target }));
+    } else {
+        mappingsArray = [];
+    }
+
+    const renameMappings = [];
+    const selectFields = [];
+    const castMappings = [];
+    const defaultMappings = [];
+    const computeSteps = [];
+
+    mappingsArray.forEach(row => {
+        const source = row.source || row.from;
+        const target = row.target || row.to || source;
+        if (!source && !target) return;
+
+        if ((mode === 'rename' || mode === 'both') && source && target && source !== target) {
+            renameMappings.push({ from: source, to: target });
+        }
+
+        if (mode === 'select' || mode === 'both') {
+            selectFields.push(target);
+        }
+
+        if (row.castType) {
+            castMappings.push({ field: target, type: row.castType });
+        }
+
+        if (row.defaultValue !== undefined) {
+            defaultMappings.push({ field: target, value: row.defaultValue });
+        }
+
+        if (row.expression) {
+            computeSteps.push({
+                op: 'compute_field',
+                target: scopePath,
+                config: { field: target, expression: row.expression }
+            });
+        }
+    });
+
+    const steps = [];
+    if (renameMappings.length) {
+        steps.push({ op: 'rename_fields', target: scopePath, config: { mappings: renameMappings } });
+    }
+    if (selectFields.length && (mode === 'select' || mode === 'both')) {
+        steps.push({ op: 'select_fields', target: scopePath, config: { fields: selectFields } });
+    }
+    if (castMappings.length) {
+        steps.push({ op: 'cast_type', target: scopePath, config: { mappings: castMappings } });
+    }
+    if (defaultMappings.length) {
+        steps.push({ op: 'default_values', target: scopePath, config: { mappings: defaultMappings } });
+    }
+    if (computeSteps.length) {
+        steps.push(...computeSteps);
+    }
+
+    return steps;
+};
+
 const transformConfigToUserFormat = (config) => {
     const { id, inputSchema, outputSchema, workflow, mockEnabled, mockResponse } = config;
 
@@ -464,6 +538,12 @@ const transformConfigToUserFormat = (config) => {
                     break;
 
                 case 'transform':
+                    const mapperSteps = compileMapperToSteps(
+                        node.data.mappingScope || '',
+                        node.data.mappings || [],
+                        node.data.mappingMode || 'rename'
+                    );
+                    mapperSteps.forEach(step => transformations.push(step));
                     if (node.data.transformations) {
                         node.data.transformations.forEach(t => {
                             const { op, target, config, onError } = t;
@@ -4756,18 +4836,41 @@ const NodePropertiesPanel = ({ node, onUpdate, onClose, theme, showToast, config
         )}
 
         {activeTab === 'mapper' && node.type === 'transform' ? (
-            <SchemaMapper
-                sourceSchema={getSourceSchemaForTransform()}
-                targetSchema={{
-                    "temperature": { type: "number" },
-                    "condition": { type: "string" },
-                    "city": { type: "string" },
-                    "nation": { type: "string" },
-                }}
-                mappings={node.data.mappings || {}}
-                onUpdateMappings={(newMappings) => onUpdate({ ...node, data: { ...node.data, mappings: newMappings }})}
-                theme={theme}
-            />
+            <div className="space-y-4">
+                <div>
+                    <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Scope Path</label>
+                    <input
+                        type="text"
+                        value={node.data.mappingScope || ''}
+                        onChange={(e) => onUpdate({ ...node, data: { ...node.data, mappingScope: e.target.value }})}
+                        className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' }`}
+                    />
+                </div>
+                <div>
+                    <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Mode</label>
+                    <select
+                        value={node.data.mappingMode || 'rename'}
+                        onChange={(e) => onUpdate({ ...node, data: { ...node.data, mappingMode: e.target.value }})}
+                        className={`w-full px-2 py-1 text-sm rounded border ${ theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300' }`}
+                    >
+                        <option value="rename">Rename</option>
+                        <option value="select">Select</option>
+                        <option value="both">Both</option>
+                    </select>
+                </div>
+                <SchemaMapper
+                    sourceSchema={getSourceSchemaForTransform()}
+                    targetSchema={{
+                        "temperature": { type: "number" },
+                        "condition": { type: "string" },
+                        "city": { type: "string" },
+                        "nation": { type: "string" },
+                    }}
+                    rows={node.data.mappings || []}
+                    onUpdateRows={(newRows) => onUpdate({ ...node, data: { ...node.data, mappings: newRows }})}
+                    theme={theme}
+                />
+            </div>
         ) : (
         <div className="space-y-4">
           <datalist id={fieldOptionsId}>
