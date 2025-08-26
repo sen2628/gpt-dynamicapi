@@ -1,5 +1,6 @@
 const { runSteps } = require('../transformRuntime');
-const config = require('./user-workflow-config.json');
+// Load the user aggregator configuration which includes mock responses
+const config = require('./user-aggregator-config.json');
 
 function resolveTemplates(obj, context) {
   if (typeof obj === 'string') {
