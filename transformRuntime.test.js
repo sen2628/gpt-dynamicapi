@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { executeTransformation, unflatten } = require('./transformRuntime');
+const { executeTransformation, unflatten, runSteps } = require('./transformRuntime');
 
 // Round-trip flatten -> unflatten
 const original = {
@@ -61,6 +61,80 @@ assert.deepStrictEqual(
   condResultFalse,
   { flag: false, nested: { foo: { bar: 1 } } },
   'else branch should unflatten nested object'
+);
+
+// Rename fields with nested paths
+const renameData = { current: { temp_c: 25, humidity: 80 } };
+const renameResult = executeTransformation(renameData, {
+  op: 'rename_fields',
+  target: '',
+  config: { mappings: [{ from: 'current.temp_c', to: 'temperature' }] }
+});
+assert.deepStrictEqual(
+  renameResult,
+  { current: { humidity: 80 }, temperature: 25 },
+  'rename_fields should move nested field to root'
+);
+
+// Select fields with nested paths
+const selectData = { a: 1, b: 2, c: { d: 3, e: 4 } };
+const selectResult = executeTransformation(selectData, {
+  op: 'select_fields',
+  target: '',
+  config: { fields: ['a', 'c.d'] }
+});
+assert.deepStrictEqual(
+  selectResult,
+  { a: 1, c: { d: 3 } },
+  'select_fields should pick specified fields only'
+);
+
+// Compute new field using expression
+const computeData = { temperature: 35 };
+const computeResult = executeTransformation(computeData, {
+  op: 'compute_field',
+  target: '',
+  config: { field: 'isHot', expression: 'temperature > 30' }
+});
+assert.deepStrictEqual(
+  computeResult,
+  { temperature: 35, isHot: true },
+  'compute_field should add computed field'
+);
+
+// Take first N elements from array
+const arrayData = { forecast: { forecastday: [1, 2, 3, 4] } };
+const arrayResult = executeTransformation(arrayData, {
+  op: 'array_take',
+  target: 'forecast.forecastday',
+  config: { count: 2 }
+});
+assert.deepStrictEqual(
+  arrayResult,
+  { forecast: { forecastday: [1, 2] } },
+  'array_take should limit array length'
+);
+
+// Combined runSteps test
+const combinedData = {
+  current: { temp_c: 35, humidity: 50 },
+  forecast: { forecastday: [1, 2, 3, 4] }
+};
+const combinedResult = runSteps(combinedData, [
+  { op: 'rename_fields', target: '', config: { mappings: [{ from: 'current.temp_c', to: 'temperature' }] } },
+  { op: 'compute_field', target: '', config: { field: 'isHot', expression: 'temperature > 30' } },
+  { op: 'array_take', target: 'forecast.forecastday', config: { count: 2 } },
+  { op: 'select_fields', target: '', config: { fields: ['temperature', 'isHot', 'current.humidity', 'forecast.forecastday'] } }
+]);
+assert.deepStrictEqual(
+  combinedResult,
+  {
+    temperature: 35,
+    isHot: true,
+    current: { humidity: 50 },
+    forecast: { forecastday: [1, 2] }
+  },
+  'runSteps should apply sequence of transformations'
 );
 
 console.log('All runtime tests passed');

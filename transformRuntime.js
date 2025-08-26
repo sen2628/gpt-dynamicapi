@@ -70,6 +70,20 @@ function setByPath(obj, path, value) {
   return obj;
 }
 
+function deleteByPath(obj, path) {
+  if (!path) return;
+  const parts = path.split('.');
+  let current = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (!current[part] || typeof current[part] !== 'object') {
+      return;
+    }
+    current = current[part];
+  }
+  delete current[parts[parts.length - 1]];
+}
+
 function runSteps(data, steps = []) {
   let working = JSON.parse(JSON.stringify(data || {}));
   for (const step of steps) {
@@ -92,6 +106,59 @@ function executeTransformation(data, t) {
   const { op, target = '', config = {} } = t || {};
   let working = JSON.parse(JSON.stringify(data || {}));
   switch (op) {
+    case 'rename_fields': {
+      let obj = getByPath(working, target) || {};
+      if (typeof obj === 'object') {
+        for (const m of config.mappings || []) {
+          const val = getByPath(obj, m.from);
+          if (val !== undefined) {
+            deleteByPath(obj, m.from);
+            setByPath(obj, m.to, val);
+          }
+        }
+      }
+      working = target ? setByPath(working, target, obj) : obj;
+      break;
+    }
+    case 'select_fields': {
+      const obj = getByPath(working, target);
+      if (obj && typeof obj === 'object') {
+        const selected = {};
+        for (const field of config.fields || []) {
+          const val = getByPath(obj, field);
+          if (val !== undefined) {
+            setByPath(selected, field, val);
+          }
+        }
+        working = target ? setByPath(working, target, selected) : selected;
+      }
+      break;
+    }
+    case 'compute_field': {
+      let obj = getByPath(working, target);
+      if (!obj || typeof obj !== 'object') {
+        obj = {};
+      }
+      let value;
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function('obj', `with(obj){ return (${config.expression}); }`);
+        value = fn(obj);
+      } catch (e) {
+        throw e;
+      }
+      setByPath(obj, config.field, value);
+      working = target ? setByPath(working, target, obj) : obj;
+      break;
+    }
+    case 'array_take': {
+      const arr = getByPath(working, target);
+      if (Array.isArray(arr)) {
+        const result = arr.slice(0, config.count);
+        working = target ? setByPath(working, target, result) : result;
+      }
+      break;
+    }
     case 'flatten': {
       const val = getByPath(working, target);
       const flat = flatten(val, config);
