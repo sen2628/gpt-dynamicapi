@@ -34,12 +34,10 @@ import apiCatalog from './api-catalog.json';
 import filterUtils from './filter-utils.js';
 import PathPicker from './PathPicker';
 import transformOps from './transform-ops.js';
-import workflowExecutor from './workflow-executor.js';
 import userAggregatorDemo from './userAggregatorDemo.js';
 
 const { parseWhereInput } = filterUtils;
 const { TRANSFORM_OPS, normalizeTransformations } = transformOps;
-const { runWorkflow } = workflowExecutor;
 
 // Base URL for executing integrator configurations
 const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
@@ -3279,21 +3277,89 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     setIsExecuting(true);
     setExecutionResults(null);
     setExecutionSteps([]);
-    try {
-      const output = await runWorkflow(config, testInputs, (step) => {
-        if (step.status === 'running') {
-          setExecutionSteps(prev => [...prev, { name: step.id, status: 'running' }]);
-        } else {
-          setExecutionSteps(prev => prev.map(s => s.name === step.id ? { ...s, status: step.status } : s));
-        }
+
+    const nodes = [...(config.workflow?.nodes || [])];
+    const results = {};
+
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+
+      setExecutionSteps(prev => [...prev, { name: node.id, status: 'running' }]);
+
+      const updatedNodes = config.workflow.nodes.map(n =>
+        n.id === node.id ? { ...n, data: { ...n.data, status: 'running' } } : n
+      );
+      const updatedEdges = config.workflow.edges.map(e => ({
+        ...e,
+        animated: e.target === node.id
+      }));
+
+      onUpdate({
+        ...config,
+        workflow: { ...config.workflow, nodes: updatedNodes, edges: updatedEdges }
       });
-      setExecutionResults({ result: { status: 'success', data: output } });
-      showToast('Workflow executed successfully', 'success');
-    } catch (err) {
-      showToast('Workflow execution failed', 'error');
-    } finally {
-      setIsExecuting(false);
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      if (node.type === 'api' || node.type === 'graphql') {
+        results[node.id] = {
+          status: 'success',
+          data: {
+            temperature: 22,
+            location: { name: 'New York', country: 'USA' },
+            forecast: [
+              { day: 'Today', temp: 22, condition: 'Sunny' },
+              { day: 'Tomorrow', temp: 20, condition: 'Cloudy' }
+            ]
+          },
+          responseTime: Math.floor(Math.random() * 300) + 100
+        };
+      } else if (node.type === 'transform') {
+        results[node.id] = {
+          status: 'success',
+          data: {
+            temperature: 22,
+            loc_name: 'New York',
+            loc_country: 'USA'
+          },
+          transformations: node.data?.transformations?.length || 0
+        };
+      }
+
+      const completedNodes = updatedNodes.map(n =>
+        n.id === node.id ? { ...n, data: { ...n.data, status: 'completed' } } : n
+      );
+
+      onUpdate({
+        ...config,
+        workflow: { ...config.workflow, nodes: completedNodes, edges: updatedEdges }
+      });
+
+      setExecutionSteps(prev => prev.map(s =>
+        s.name === node.id ? { ...s, status: 'success' } : s
+      ));
     }
+
+    setExecutionResults(results);
+    setIsExecuting(false);
+    showToast('Workflow executed successfully', 'success');
+
+    setTimeout(() => {
+      const resetNodes = config.workflow.nodes.map(n => ({
+        ...n,
+        data: { ...n.data, status: 'idle' }
+      }));
+      const resetEdges = config.workflow.edges.map(e => ({
+        ...e,
+        animated: false
+      }));
+
+      onUpdate({
+        ...config,
+        workflow: { ...config.workflow, nodes: resetNodes, edges: resetEdges }
+      });
+      setExecutionSteps([]);
+    }, 2000);
   };
   
     const handlePromoteEnvironment = (fromEnv, toEnv, versionId) => {
