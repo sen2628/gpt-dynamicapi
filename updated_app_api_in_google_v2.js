@@ -34,9 +34,12 @@ import apiCatalog from './api-catalog.json';
 import filterUtils from './filter-utils.js';
 import PathPicker from './PathPicker';
 import transformOps from './transform-ops.js';
+import workflowExecutor from './workflow-executor.js';
+import userAggregatorDemo from './userAggregatorDemo.js';
 
 const { parseWhereInput } = filterUtils;
 const { TRANSFORM_OPS, normalizeTransformations } = transformOps;
+const { runWorkflow } = workflowExecutor;
 
 // Base URL for executing integrator configurations
 const INTEGRATOR_BASE_URL = 'https://appintegrator.example.com/execute';
@@ -3277,22 +3280,14 @@ const APIStudio = ({ config, configs, onUpdate, onExit, onDelete, environment, t
     setExecutionResults(null);
     setExecutionSteps([]);
     try {
-      const res = await fetch(`${INTEGRATOR_BASE_URL}/${config.name}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
-        },
-        body: JSON.stringify({ input: testInputs, config })
+      const output = await runWorkflow(config, testInputs, (step) => {
+        if (step.status === 'running') {
+          setExecutionSteps(prev => [...prev, { name: step.id, status: 'running' }]);
+        } else {
+          setExecutionSteps(prev => prev.map(s => s.name === step.id ? { ...s, status: step.status } : s));
+        }
       });
-      const data = await res.json();
-      const steps = data.steps || [];
-      for (const step of steps) {
-        setExecutionSteps(prev => [...prev, { name: step.name || `Step ${prev.length + 1}`, status: 'running' }]);
-        await new Promise(r => setTimeout(r, 500));
-        setExecutionSteps(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, status: 'success' } : s));
-      }
-      setExecutionResults({ result: { status: 'success', data: data.output || data } });
+      setExecutionResults({ result: { status: 'success', data: output } });
       showToast('Workflow executed successfully', 'success');
     } catch (err) {
       showToast('Workflow execution failed', 'error');
@@ -6066,7 +6061,8 @@ const App = () => {
              } , isCurrent: true},
         ],
         testSuites: [],
-      }
+      },
+      userAggregatorDemo
     ];
     
     setConfigs(demoConfigs);
