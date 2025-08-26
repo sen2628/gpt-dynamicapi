@@ -13,7 +13,9 @@ function validateConfig(config, schema = {}) {
       return;
     }
     const { op, target, expectedType, config = {} } = node;
-    if (!target) {
+    // Allow empty string as a valid target representing the root object.
+    // Only treat undefined or null as missing targets.
+    if (target === undefined || target === null) {
       throw new Error(`Missing target for op ${op || 'unknown'} at ${ctx}`);
     }
     if (schema && target && !schema[target]) {

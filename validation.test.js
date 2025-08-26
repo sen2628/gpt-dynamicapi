@@ -17,6 +17,15 @@ try {
 }
 assert.ok(threw, 'should throw for missing target');
 
+// Allow empty string target (root)
+threw = false;
+try {
+  persistConfig([{ op: 'flatten', target: '' }], schema);
+} catch (err) {
+  threw = true;
+}
+assert.ok(!threw, 'should allow empty string target');
+
 // Type mismatch
 threw = false;
 try {
