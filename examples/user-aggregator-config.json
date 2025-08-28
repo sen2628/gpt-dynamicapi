@@ -1,0 +1,98 @@
+{
+  "id": "userAggregator",
+  "name": "User Aggregator Demo",
+  "mockEnabled": true,
+  "input": {
+    "userId": "982652463540121"
+  },
+  "workflow": {
+    "nodes": [
+      {
+        "id": "getUserDetail",
+        "type": "graphql",
+        "endpoint": "https://dev.api-int.usermanagement.data.naqp.toyota.com/graphql",
+        "query": "query($userId:String!){ getUserDetailByUserId(userId:$userId){ userId userFirstName userLastName corpRegionCode }}",
+        "variables": { "userId": "{{input.userId}}" },
+        "mockResponse": {
+          "data": {
+            "getUserDetailByUserId": {
+              "userId": "982652463540121",
+              "userFirstName": "John",
+              "userLastName": "Doe",
+              "corpRegionCode": "US"
+            }
+          }
+        }
+      },
+      {
+        "id": "getUserWorkingSession",
+        "type": "graphql",
+        "endpoint": "https://dev.api-int.usermanagement.data.naqp.toyota.com/graphql",
+        "query": "query($pk:String!){ getUserWorkingSessionByappCodeActionTypeUserId(PK_appCodeActionTypeUserId:$pk, limit:10){ items { actionId actionDate } }}",
+        "variables": { "pk": "Q1TIS_VIN_{{user.userId}}" },
+        "mockResponse": {
+          "data": {
+            "getUserWorkingSessionByappCodeActionTypeUserId": {
+              "items": [
+                { "actionId": "LOGIN", "actionDate": "2022-09-21" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "getUserDelegation",
+        "type": "graphql",
+        "endpoint": "https://dev.api-int.usermanagement.data.naqp.toyota.com/graphql",
+        "query": "query($userId:String!,$limit:Int!){ getUserDelegationByUserId(userId:$userId, limit:$limit){ items { delegationTask delegationStatus } }}",
+        "variables": { "userId": "{{user.userId}}", "limit": 10 },
+        "mockResponse": {
+          "data": {
+            "getUserDelegationByUserId": {
+              "items": [
+                { "delegationTask": "ApproveOrder", "delegationStatus": "ACTIVE" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "getCountryConfig",
+        "type": "graphql",
+        "endpoint": "https://dev.api-int.usermanagement.data.naqp.toyota.com/graphql",
+        "query": "query($categoryName:String!,$categoryId:String!){ getUserManagementConfigByCategoryNameAndId(categoryName:$categoryName, categoryId:$categoryId){ categoryName categoryId categoryValues }}",
+        "variables": { "categoryName": "Country", "categoryId": "{{user.corpRegionCode}}" },
+        "mockResponse": {
+          "data": {
+            "getUserManagementConfigByCategoryNameAndId": {
+              "categoryName": "Country",
+              "categoryId": "US",
+              "categoryValues": { "currency": "USD" }
+            }
+          }
+        }
+      },
+      {
+        "id": "transform",
+        "type": "transform",
+        "transformations": [
+          {
+            "op": "rename_fields",
+            "target": "user",
+            "config": {
+              "mappings": [
+                { "from": "userFirstName", "to": "firstName" },
+                { "from": "userLastName", "to": "lastName" }
+              ]
+            }
+          },
+          {
+            "op": "select_fields",
+            "target": "",
+            "config": { "fields": ["user", "sessions", "delegations", "countryConfig"] }
+          }
+        ]
+      }
+    ]
+  }
+}
